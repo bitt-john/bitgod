@@ -1067,6 +1067,84 @@ BitGoD.prototype.handleGetReceivedByAddress = function(address, minConfirms) {
   });
 };
 
+BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpty) {
+
+  var self = this;
+
+  minConfirms = this.getNumber(minConfirms, 0);
+
+  includeEmpty = includeEmpty || false;
+
+  if (includeEmpty && typeof(includeEmpty) !== 'boolean') {
+    throw self.error('Instant flag was not a boolean', -1);
+  }
+
+  var listReceivedByAddressInternal = function(accntAddrs) {
+
+    accntAddrs = accntAddrs || [];
+    return self.handleListTransactions("", 1e12, 0, undefined).then(function(transactions){
+
+      // listsinceblock will return ALL transactions with no limit
+      return _(transactions)
+          .concat(accntAddrs,transactions)
+          .reduce(function(endResult, current) {
+
+            var exists = _.find(endResult, { 'address': current.address });
+
+            if (!exists) {
+              endResult.push({
+
+                address: current.address,
+                account: current.account,
+                amount : current.confirmations >= minConfirms ? current.amount : 0,
+                confirmations: current.confirmations,
+                txids : current.txid ? [current.txid] : [],
+
+              });
+            } else {
+
+              if (current.confirmations >= minConfirms) {
+                exists.amount += current.amount;
+              }
+
+              if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
+                exists.txids.push(current.txid);
+              }
+            }
+            return endResult;
+          }, [])
+
+          .filter(function(tx){
+            return includeEmpty ? (tx.amount >= 0):(tx.amount > 0);
+          });
+    });
+  };
+
+  if(includeEmpty) {
+    //include empty addresses
+    return self.handleGetAddressesByAccount().then(function(addrs){
+
+      var accntAddrs = _(addrs)
+        .map(function(addrs){
+          return {
+            address: addrs,
+            account: "",
+            amount : 0,
+            confirmations: 0,
+            txids : '',
+          };
+        },[]).value();
+
+      return listReceivedByAddressInternal(accntAddrs);
+    });
+
+  } else {
+    return listReceivedByAddressInternal();
+  }
+
+};
+
+
 BitGoD.prototype.handleGetTransaction = function(txid) {
   this.ensureWallet();
   var self = this;
@@ -1464,6 +1542,7 @@ BitGoD.prototype.run = function(testArgString) {
     'listtransactions' : self.handleListTransactions,
     'listsinceblock' : self.handleListSinceBlock,
     'getreceivedbyaddress' : self.handleGetReceivedByAddress,
+    'listreceivedbyaddress' : self.handleListReceivedByAddress,
     'sendmany' : self.handleSendMany,
     'settxfee' : self.handleSetTxFee,
     'validateaddress' : self.handleValidateAddress,
