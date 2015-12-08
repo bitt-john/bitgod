@@ -1432,6 +1432,24 @@ describe('BitGoD', function() {
           });
     });
 
+    it('bad param listreceivedbyaddress 0 hiben', function() {
+      return callRPC('listreceivedbyaddress', 0, 'hiben')
+          .then(expectError, function(err) {
+            err.message.should.match(/Instant flag was not a boolean/);
+          });
+    });
+
+    it('listreceivedbyaddress no transactions', function() {
+      nock.cleanAll();
+      nock('https://test.bitgo.com:443')
+          .persist()
+          .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx?limit=500')
+          .reply(200, {"transactions": [], count: 0});
+      return callRPC('listreceivedbyaddress')
+          .then(function(result) {
+            result.should.eql([]);
+          });
+    });
 
 
   });
