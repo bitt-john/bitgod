@@ -1082,7 +1082,7 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
   var self = this;
 
   // the minimum confirms before amount added to total
-  minConfirms = this.getNumber(minConfirms, 0);
+  minConfirms = this.getNumber(minConfirms, 1);
 
   //whether to show 0 balance addresses
   includeEmpty = includeEmpty || false;
@@ -1118,13 +1118,16 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
               if (current.confirmations >= minConfirms) {
                 exists.amount += current.amount;
               }
+              //only txids that pay to the address
+              if (current.amount > 0 && (current.confirmations >= minConfirms) ) {
+                if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
+                  exists.txids.push(current.txid);
+                }
+                if(exists.timereceived < current.timereceived) {
+                  exists.confirmations = current.confirmations;
+                }
+              }
 
-              if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
-                exists.txids.push(current.txid);
-              }
-              if(exists.timereceived < current.timereceived) {
-                exists.confirmations = current.confirmations;
-              }
             }
             return endResult;
           }, [])

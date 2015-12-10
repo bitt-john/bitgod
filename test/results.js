@@ -1829,14 +1829,10 @@ exports.receivedbyaddressListTxt2 =     [
     "account": "",
     "address": "2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX",
     "amount": 1001,
-    "confirmations": 76114,
+    "confirmations": 85298,
     "txids": [
       "44954268b32d386733f64d457bc933bf323f31f3596b90becc718a5b7cbfce8a",
       "236a1eece7702b3825cd81f1c4af06014bfba917a689bf22180e45eae33d5e0c",
-      "43be5a47de8f0cc885f67ba10e02fba13ab658158e41ad8ed9a9df65055c73f4",
-      "399938172ccf460a5cd5755975c637a25d2103a94f201c719ee47133145b3c32",
-      "fed09e25a68f2dc5f6c640ea04184de59e0aeb3adab7c42f8bcb7d497ba505c4",
-      "b83ef1ca869106ef78d069502baa42cb1a243b4af8bb45cc48ce3d8486103461"
     ]
   },
   {
