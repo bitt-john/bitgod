@@ -1107,22 +1107,22 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
 
                 address: current.address,
                 account: current.account,
-                amount : current.confirmations >= minConfirms ? current.amount : 0,
+                amount : (current.confirmations >= minConfirms) && current.amount > 0  ? current.amount : 0,
                 confirmations: current.confirmations,
                 timereceived: current.timereceived,
-                txids : current.txid ? [current.txid] : [],
+                //txids : current.txid ? [current.txid] : [],
 
               });
             } else {
 
-              if (current.confirmations >= minConfirms) {
-                exists.amount += current.amount;
-              }
               //only txids that pay to the address
               if (current.amount > 0 && (current.confirmations >= minConfirms) ) {
-                if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
-                  exists.txids.push(current.txid);
-                }
+
+                exists.amount += current.amount;
+
+                //if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
+                //  exists.txids.push(current.txid);
+                //}
                 if(exists.timereceived < current.timereceived) {
                   exists.confirmations = current.confirmations;
                 }
