@@ -1082,7 +1082,7 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
   var self = this;
 
   // the minimum confirms before amount added to total
-  minConfirms = this.getNumber(minConfirms, 1);
+  minConfirms = this.getNumber(minConfirms, 0);
 
   //whether to show 0 balance addresses
   includeEmpty = includeEmpty || false;
@@ -1136,6 +1136,7 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
             return includeEmpty ? (tx.amount >= 0):(tx.amount > 0);
           })
           //timereceived was useful to ensure latest confirm count but not a call output so we remove it
+
           .map(function(tx){return _.omit(tx,'timereceived');})
     });
   };
