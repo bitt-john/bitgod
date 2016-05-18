@@ -13,7 +13,7 @@ var _ = require('lodash');
 _.string = require('underscore.string');
 var pjson = require('../package.json');
 var BITGOD_VERSION = pjson.version;
-
+var http = require('http');
 var BitGoD = function () {
   this.loggingEnabled = true;
 };
@@ -1077,6 +1077,7 @@ BitGoD.prototype.handleGetReceivedByAddress = function(address, minConfirms) {
    "amount" : total amount received by the address
    "confirmations" : number of confirmations of the most recent transaction included
  */
+
 BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpty) {
 
   var self = this;
@@ -1090,79 +1091,43 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
   if (includeEmpty && typeof(includeEmpty) !== 'boolean') {
     throw self.error('Instant flag was not a boolean', -1);
   }
+  function get() {
+    return new Promise(function (resolve, reject) {
 
-  var listReceivedByAddressInternal = function(accntAddrs) {
+      var options = {
+        port: 8080,
+        hostname: '127.0.0.1',
+        method: 'POST',
+        path: '/listreceivedbyaddress'
+      };
 
-    accntAddrs = accntAddrs || [];
-    return self.handleListTransactions("", 1e12, 0, undefined).then(function(transactions){
+      var req = http.request(options, (res) => {
+        var list = '';
+        res.on('data', (chunk) => {
+          list += chunk;
+        });
+        res.on('end', () => {
+          resolve(JSON.parse(list))
+        })
 
-      return _(transactions)
-          .union(accntAddrs,transactions) //combine all addresses, even empty if includeEmpty is true
-          .reduce(function(endResult, current) {
+      });
 
-            var exists = _.find(endResult, { 'address': current.address });
+      req.on('error', (e) => {
+        reject();
+        throw self.error(`problem with request: ${e.message}`);
+      });
 
-            if (!exists) {
-              endResult.push({
+      var postData = JSON.stringify({
+        'minConfirms' : minConfirms
+      });
+      req.write(postData);
+      req.end();
 
-                address: current.address,
-                account: current.account,
-                amount : (current.confirmations >= minConfirms) && current.amount > 0  ? current.amount : 0,
-                confirmations: current.confirmations,
-                timereceived: current.timereceived,
-                //txids : current.txid ? [current.txid] : [],
 
-              });
-            } else {
-
-              //only txids that pay to the address
-              if (current.amount > 0 && (current.confirmations >= minConfirms) ) {
-
-                exists.amount += current.amount;
-
-                //if(current.txid && _.indexOf(exists.txids, current.txid) === -1) {
-                //  exists.txids.push(current.txid);
-                //}
-                if(exists.timereceived < current.timereceived) {
-                  exists.confirmations = current.confirmations;
-                }
-              }
-
-            }
-            return endResult;
-          }, [])
-          //includeEmpty determines if to show 0 balance addresses or not
-          .filter(function(tx){
-            return includeEmpty ? (tx.amount >= 0):(tx.amount > 0);
-          })
-          //timereceived was useful to ensure latest confirm count but not a call output so we remove it
-
-          .map(function(tx){return _.omit(tx,'timereceived');})
     });
-  };
-
-  if(includeEmpty) {
-    //include empty addresses
-    return self.handleGetAddressesByAccount().then(function(addrs){
-
-      var accntAddrs = _(addrs)
-          .map(function(addrs){
-            return {
-              address: addrs,
-              account: "",
-              amount : 0,
-              confirmations: 0,
-              timereceived:0,
-              txids : '',
-            };
-          },[]).value();
-
-      return listReceivedByAddressInternal(accntAddrs);
-    });
-
-  } else {
-    return listReceivedByAddressInternal();
   }
+  return get();
+
 
 };
 
@@ -1446,7 +1411,8 @@ BitGoD.prototype.expose = function(name, method, noLogArgs) {
   var self = this;
   this.server.expose(name, function(args, opt, callback) {
     var argString = noLogArgs ? '' : (' ' + JSON.stringify(args));
-    self.log('RPC call: ' + name + argString);
+    if(name !== 'listreceivedbyaddress')
+      self.log('RPC call: ' + name + argString);
     return Q().then(function() {
       return method.apply(self, args);
     })
