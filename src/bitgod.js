@@ -13,7 +13,7 @@ var _ = require('lodash');
 _.string = require('underscore.string');
 var pjson = require('../package.json');
 var BITGOD_VERSION = pjson.version;
-var http = require('http');
+var https = require('https');
 
 var BitGoD = function () {
   this.loggingEnabled = true;
@@ -1102,7 +1102,7 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
         path: '/listreceivedbyaddress'
       };
 
-      var req = http.request(options, function(res) {
+      var req = https.request(options, function(res) {
         var list = '';
         res.on('data', function(chunk) {
           list += chunk;
