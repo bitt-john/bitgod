@@ -14,6 +14,7 @@ _.string = require('underscore.string');
 var pjson = require('../package.json');
 var BITGOD_VERSION = pjson.version;
 var http = require('http');
+
 var BitGoD = function () {
   this.loggingEnabled = true;
 };
@@ -1101,20 +1102,20 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
         path: '/listreceivedbyaddress'
       };
 
-      var req = http.request(options, (res) => {
+      var req = http.request(options, function(res) {
         var list = '';
-        res.on('data', (chunk) => {
+        res.on('data', function(chunk) {
           list += chunk;
         });
-        res.on('end', () => {
+        res.on('end', function() {
           resolve(JSON.parse(list))
         })
 
       });
 
-      req.on('error', (e) => {
+      req.on('error', function(e){
         reject();
-        throw self.error(`problem with request: ${e.message}`);
+        throw self.error("problem with request: " +  e.message);
       });
 
       var postData = JSON.stringify({
