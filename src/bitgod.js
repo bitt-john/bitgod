@@ -1432,7 +1432,7 @@ BitGoD.prototype.run = function(testArgString) {
     proxyhost: 'localhost',
     proxyuser: 'bitcoinrpc',
     rpcbind: 'localhost',
-    env: 'test'
+    env: 'prod'
   };
 
   // Parse command line args
