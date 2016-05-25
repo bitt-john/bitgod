@@ -1097,7 +1097,7 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
 
       var options = {
         port: 8080,
-        hostname: '127.0.0.1',
+        hostname: 'bitgo.bitt.com',
         method: 'POST',
         path: '/listreceivedbyaddress'
       };
