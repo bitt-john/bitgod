@@ -13,7 +13,8 @@ var _ = require('lodash');
 _.string = require('underscore.string');
 var pjson = require('../package.json');
 var BITGOD_VERSION = pjson.version;
-var http = require('http');
+var https = require('https');
+
 var BitGoD = function () {
   this.loggingEnabled = true;
 };
@@ -1096,25 +1097,25 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
 
       var options = {
         port: 8080,
-        hostname: '127.0.0.1',
+        hostname: 'bitgo.bitt.com',
         method: 'POST',
         path: '/listreceivedbyaddress'
       };
 
-      var req = http.request(options, (res) => {
+      var req = https.request(options, function(res) {
         var list = '';
-        res.on('data', (chunk) => {
+        res.on('data', function(chunk) {
           list += chunk;
         });
-        res.on('end', () => {
+        res.on('end', function() {
           resolve(JSON.parse(list))
         })
 
       });
 
-      req.on('error', (e) => {
-        reject(e);
-        console.log (`problem with request:`, e);
+      req.on('error', function(e){
+        reject();
+        throw self.error("problem with request: " +  e.message);
       });
 
       var postData = JSON.stringify({
@@ -1431,7 +1432,7 @@ BitGoD.prototype.run = function(testArgString) {
     proxyhost: 'localhost',
     proxyuser: 'bitcoinrpc',
     rpcbind: 'localhost',
-    env: 'test'
+    env: 'prod'
   };
 
   // Parse command line args
