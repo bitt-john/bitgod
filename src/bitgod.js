@@ -1113,8 +1113,8 @@ BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpt
       });
 
       req.on('error', (e) => {
-        reject();
-        throw self.error(`problem with request: ${e.message}`);
+        reject(e);
+        console.log (`problem with request:`, e);
       });
 
       var postData = JSON.stringify({
