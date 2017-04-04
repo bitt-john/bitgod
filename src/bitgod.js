@@ -1024,6 +1024,7 @@ BitGoD.prototype.validateTxOutputs = function(outputs) {
  * @param count The number of transactions to return
  * @param from The number of transactions to skip
  * @param minHeight Only return transactions from a block with minHeight and above
+ * @param decryptTravelInfo  Decrypt received travel info if it exists
  * @returns {*}
  */
 BitGoD.prototype.handleListTransactions = function(account, count, from, minHeight, decryptTravelInfo) {
