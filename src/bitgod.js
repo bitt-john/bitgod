@@ -650,7 +650,9 @@ BitGoD.prototype.newAddress = function(chain) {
 };
 
 BitGoD.prototype.handleGetNewAddress = function() {
-  return this.newAddress(0);
+  const isSegwit = this.bitgo.getConstants().enableSegwit;
+  const defaultChain = isSegwit ? 10 : 0; // we use 10 for segwit receive addresses and 0 for non-segwit
+  return this.newAddress(defaultChain);
 };
 
 
@@ -675,12 +677,14 @@ BitGoD.prototype.handleGetAddressesByAccount = function(account) {
 };
 
 BitGoD.prototype.handleGetRawChangeAddress = function() {
-  return this.newAddress(1);
+  const isSegwit = this.bitgo.getConstants().enableSegwit;
+  const defaultChain = isSegwit ? 11 : 1; // we use 11 for segwit change addresses and 1 for non-segwit
+  return this.newAddress(defaultChain);
 };
 
-BitGoD.prototype.getBalanceFromUnspents = function(minConfirms, maxConfirms, ignoreConfirmsForChange) {
+BitGoD.prototype.getBalanceFromUnspents = function(minConfirms, maxConfirms, ignoreConfirmsForChange, minUnspentSize) {
   var self = this;
-  return this.handleListUnspent(minConfirms, maxConfirms, undefined, ignoreConfirmsForChange)
+  return this.handleListUnspent(minConfirms, maxConfirms, undefined, ignoreConfirmsForChange, minUnspentSize)
   .then(function(unspents) {
     return self.toBTC(
       Math.round(unspents.reduce(function(prev, unspent) { return prev + unspent.satoshis; }, 0))
@@ -688,12 +692,12 @@ BitGoD.prototype.getBalanceFromUnspents = function(minConfirms, maxConfirms, ign
   });
 };
 
-BitGoD.prototype.getBalance = function(minConfirms) {
+BitGoD.prototype.getBalance = function(minConfirms, minUnspentSize) {
   assert(typeof(minConfirms) !== 'undefined');
   var self = this;
   return Q().then(function() {
     if (minConfirms >= 2) {
-      return self.getBalanceFromUnspents(minConfirms, 9999999, true);
+      return self.getBalanceFromUnspents(minConfirms, 9999999, 0, true, minUnspentSize);
     }
     return self.getWallet()
     .then(function(wallet) {
@@ -705,11 +709,11 @@ BitGoD.prototype.getBalance = function(minConfirms) {
   });
 };
 
-BitGoD.prototype.handleGetBalance = function(account, minConfirms) {
+BitGoD.prototype.handleGetBalance = function(account, minConfirms, minUnspentSize) {
   this.ensureWallet();
   this.ensureBlankAccount(account);
   minConfirms = this.getNumber(minConfirms, 1);
-  return this.getBalance(minConfirms);
+  return this.getBalance(minConfirms, minUnspentSize);
 };
 
 BitGoD.prototype.handleGetUnconfirmedBalance = function() {
@@ -738,15 +742,17 @@ BitGoD.prototype.handleListAccounts = function(minConfirms) {
   });
 };
 
-BitGoD.prototype.handleListUnspent = function(minConfirms, maxConfirms, addresses, ignoreConfirmsForChanges) {
+BitGoD.prototype.handleListUnspent = function(minConfirms, maxConfirms, addresses, ignoreConfirmsForChanges, minUnspentSize) {
   this.ensureWallet();
   var self = this;
   minConfirms = this.getNumber(minConfirms, 1);
   maxConfirms = this.getNumber(maxConfirms, 9999999);
 
-  return this.wallet.unspents()
+  return this.wallet.unspents({minConfirms: minConfirms, minSize: minUnspentSize})
   .then(function(unspents) {
     return unspents.map(function(u) {
+      const chain = parseInt(u.chainPath.split('/')[1], 10);
+      const isValidChain = _.isNumber(chain) && !isNaN(chain);
       return {
         txid: u.tx_hash,
         vout: u.tx_output_n,
@@ -754,6 +760,8 @@ BitGoD.prototype.handleListUnspent = function(minConfirms, maxConfirms, addresse
         account: self.masqueradeAccount || '',
         scriptPubKey: u.script,
         redeemScript: u.redeemScript,
+        witnessScript: u.witnessScript,
+        isSegwit: isValidChain && (chain === 10 || chain === 11),
         amount: self.toBTC(u.value),
         satoshis: u.value,  // non-standard field
         confirmations: u.confirmations,
@@ -804,7 +812,7 @@ BitGoD.prototype.processTxAndAddOutputsToList = function(tx, outputList, keychai
     // or if it's an overall receive, and there's a positive output elsewhere.
     // TODO: fix this the right way to know whether it's change address if change
     // addresses are no longer always put last.
-    if ((tx.netValue < 0 && output.chain === 1) ||
+    if ((tx.netValue < 0 && (output.chain === 1 || output.chain === 11)) ||
     (tx.netValue > 0 && !output.isMine) ) {
       return;
     }
@@ -1383,7 +1391,7 @@ BitGoD.prototype.handleFanOutUnspents = function(target){
   });
 };
 
-BitGoD.prototype.handleSendToAddress = function(address, btcAmount, comment, commentTo, instant, sequenceId) {
+BitGoD.prototype.handleSendToAddress = function(address, btcAmount, comment, commentTo, instant, sequenceId, minUnspentSize) {
   this.ensureWallet();
   var self = this;
   var satoshis = Math.round(Number(btcAmount) * 1e8);
@@ -1404,7 +1412,8 @@ BitGoD.prototype.handleSendToAddress = function(address, btcAmount, comment, com
       feeRate: self.txFeeRate,
       feeTxConfirmTarget: self.txConfirmTarget,
       instant: !!instant,
-      targetWalletUnspents: self.minUnspentsTarget
+      targetWalletUnspents: self.minUnspentsTarget,
+      minUnspentSize: minUnspentSize
     });
   })
   .then(function(result) {
@@ -1434,7 +1443,7 @@ BitGoD.prototype.handleSendToAddress = function(address, btcAmount, comment, com
 /**
  * Send many (with extended result)
  */
-BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfirms, comment, instant, sequenceId) {
+BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize) {
   if (typeof(recipients) === 'string') {
     recipients = JSON.parse(recipients);
   }
@@ -1468,6 +1477,7 @@ BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfi
       feeRate: self.txFeeRate,
       feeTxConfirmTarget: self.txConfirmTarget,
       instant: !!instant,
+      minUnspentSize: minUnspentSize,
       targetWalletUnspents: self.minUnspentsTarget,
       keychain: self.getSigningKeychain()
     });
@@ -1484,9 +1494,9 @@ BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfi
   });
 };
 
-BitGoD.prototype.handleSendMany = function(account, recipients, minConfirms, comment, instant, sequenceId) {
+BitGoD.prototype.handleSendMany = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize) {
   // Call sendManyExtended internally, but return just the txid, to conform to sendmany specification
-  return this.handleSendManyExtended(account, recipients, minConfirms, comment, instant, sequenceId)
+  return this.handleSendManyExtended(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize)
   .then(function(result) {
     return result.hash;
   });
