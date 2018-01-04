@@ -11,7 +11,7 @@ var nock = require('nock');
 var pjson = require('../package.json');
 var _ = require('lodash');
 var results = require('./results');
-var bitcoin = require('bitcoinjs-lib');
+var bitcoin = require('bitgo').bitcoin;
 
 var BitGoD = require('../src/bitgod');
 
@@ -61,8 +61,23 @@ describe('BitGoD', function() {
   var expectError = function() { assert(false); };
 
   before(function() {
-    // nock.disableNetConnect();
-    nock.enableNetConnect('localhost');
+
+    // make sure enableSegwit is set to true
+    nock('https://test.bitgo.com:443')
+    .persist()
+    .get('/api/v1/client/constants')
+    .reply(200, {ttl: 3600,
+      constants: {
+      maxFee: 100000000,
+      maxFeeRate: 100000,
+      minFeeRate: 0,
+      minInstantFeeRate: -1000,
+      fallbackFeeRate: 322097,
+      minOutputSize: 2730,
+      defaultGasPrice: 30000000000000,
+      bitgoEthAddress: "0x0f47ea803926926f299b7f1afc8460888d850f47",
+      enableSegwit: true
+    }});
 
     // Setup RPC client and callRPC function
     client = rpc.Client.$create(19332, 'localhost', 'test', 'pass');
@@ -73,7 +88,10 @@ describe('BitGoD', function() {
 
     // Setup BitGoD
     bitgod = new BitGoD().setLoggingEnabled(false);
-    return bitgod.run('-env test -rpcuser=test -rpcpassword=pass');
+    // pass in minunspentstarget option to test if BitGoD reads it in correctly
+    bitgod.run('-env test -rpcuser=test -rpcpassword=pass -minunspentstarget=50');
+
+    nock.enableNetConnect('localhost');
   });
 
   describe('Initialization', function(done) {
@@ -89,7 +107,7 @@ describe('BitGoD', function() {
 
     it('getinfo', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/tx/fee?numBlocks=2')
+      .get('/api/v1/tx/fee?version=12&numBlocks=2')
       .reply(200, {"feePerKb":20000,"numBlocks":2});
 
       return callRPC('getinfo')
@@ -103,6 +121,11 @@ describe('BitGoD', function() {
         result.paytxfee.should.equal(0.0002);
         result.txconfirmtarget.should.equal(2);
       });
+    });
+
+    it('should have read in minunspentstarget option correctly', function() {
+      bitgod.should.have.property('minUnspentsTarget');
+      bitgod.minUnspentsTarget.should.equal(50);
     });
 
     it('not an API', function() {
@@ -210,9 +233,17 @@ describe('BitGoD', function() {
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
         .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-19T19:42:04.212Z","expires":"2015-01-19T19:42:14.212Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":81873015758,"balance":81873015758,"pendingApprovals":[]});
 
-      return callRPC('settoken', '1fb45ec431a6edc8df1175e65625ccefa211fef64b726627eea1fea62e1a1ff9')
+      return callRPC('settoken', '3de53e265da9e6c4c27c8b73120d9ed953207dbea5dd380d212414d86c520385')
       .then(function(result) {
         result.should.equal('Authenticated as BitGo user: user@domain.com');
+      });
+    });
+
+    // Use this when making new tests
+    xit('realsettoken', function() {
+      return callRPC('settoken', 'YOURTOKEN')
+      .then(function(result) {
+        result.should.equal('Authenticated as BitGo user: ben+0@bitgo.com');
       });
     });
 
@@ -356,26 +387,26 @@ describe('BitGoD', function() {
 
       // receive address creation
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/0', {"chain":0})
-        .reply(200, {"address":"2N1wzRTkUSkZzDLawha1QZKw5z8smyADzHA","chain":0,"index":26,"path":"/0/26"});
+        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/10', {"chain":10})
+        .reply(200, {"address":"2MzHdeZsnkXZyPtA128ToZHDWx5hLTPV6ib","chain":10,"index":26,"path":"/10/26"});
 
       // receive address creation
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1})
-        .reply(200, {"address":"2MwUPsS6b7tGKDe8ZXNTAhdrQkGmJgozDMg","chain":1,"index":70,"path":"/1/70"});
+        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11})
+        .reply(200, {"address":"2N2yHyNdB3kvAdZ63UPFvk51FeRfG3WrDaf","chain":11,"index":70,"path":"/11/70"});
     });
 
     it('getnewaddress', function() {
       return callRPC('getnewaddress')
       .then(function(result) {
-        result.should.equal('2N1wzRTkUSkZzDLawha1QZKw5z8smyADzHA');
+        result.should.equal('2MzHdeZsnkXZyPtA128ToZHDWx5hLTPV6ib');
       });
     });
 
     it('getrawchangeaddress', function() {
       return callRPC('getrawchangeaddress')
       .then(function(result) {
-        result.should.equal('2MwUPsS6b7tGKDe8ZXNTAhdrQkGmJgozDMg');
+        result.should.equal('2N2yHyNdB3kvAdZ63UPFvk51FeRfG3WrDaf');
       });
     });
 
@@ -389,48 +420,43 @@ describe('BitGoD', function() {
 
     it('getinfo', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/tx/fee?numBlocks=2')
+      .get('/api/v1/tx/fee?version=12&numBlocks=2')
       .reply(200, {"feePerKb":20000,"numBlocks":2});
 
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents')
-      .reply(200, {"unspents":[ { tx_hash: 'e221a92abd3b446787550d7c34954b76a4fb49f5eb1091bdc9a9adabeed30de5',
-        tx_output_n: 0,
-        date: '2015-07-07T20:37:18.110Z',
-        address: '2MvjLv8oyxrnYdTZ8zmmb1QE8uf16VVi4fZ',
-        script: 'a9142639ced1448d394e718ad6f51d4c427f1eb6622b87',
-        value: 56547875758,
-        blockHeight: -1,
-        wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-        redeemScript: '522102598ab55d2be39e124fec05bdcc5150e71363c7c41156c67f9fcdccd88b3961de21033cbe7d4b35f76bf777dd87557d19d06b50c3ec60f13e4dad5029b63b659399102102ee327f905a9eb37ea806172d6432fce61e0fe63c2b2999266d261d188f0a430853ae',
-        chainPath: '/1/105',
-        isChange: true,
-        confirmations: 0 },
-        { tx_hash: '15a5690c2b5e5b601dc4ec53d060396e247f7c7aaf73cfdce6bbb0f1aa457ee6',
-          tx_output_n: 0,
-          date: '2015-07-07T20:40:07.594Z',
-          address: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          script: 'a914b238b35dd6399962fbc746f467774c2cf4966a5d87',
-          value: 139127071,
-          blockHeight: -1,
-          wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          redeemScript: '522102e8ff22efc04a4d85e4dc383058eaf163fb93bf847e450c2cdaf893298f1b4c1321034eb5acb9d1134bcee9c211b23282fb67dc29fc4c78c630c89fa5b8c5146fe2a12102e5aecdb7e94c9c7e0dc119daab73504d849e2223cfdda60b395af5558c97806853ae',
-          chainPath: '/0/0',
-          isChange: null,
-          confirmations: 0 } ],"pendingTransactions":false});
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+        .reply(200, ["1f8b08000000000002038d53d96ea33014fd95cacf748a590ce42dcd568545340b4933aa46c6760849008735a4eabf8f49da9166d4d10c2f58f71e9f7bac73ee1bf81153d003ba86149d2248439d99bafcf959c44454411a0112b8e214cf0af0409b0f679e978e5a34312fced88cd2a7e8f0829cc0f28bb5801e71c88e02bd604579b7c2c7232bef604751f44919d70cf4cabc6212285b2ecea0c05bb6a3a2bfcd19bb88ca1b28e3a4eb2832d4ef21bc578c856cf474b3279bdf6443db082c3bf33867c55720f8017a9700a6499c0eb22a2d410f4a80e7718dcbeb84036bc90ec7a960f8fe06cebc0a0555f74308baaddbf44fb3908cb6b3d1305906b69ae90d3b44997270a9e91be5c6362ff9307ad4748d54c1b4587afafa7269123a9e35fb2c5b25c91e65593dda381946287e721f4fb535adf22a5da2935d0d6ac2dde14e3c83e37227063fc80fb2d0fb5721e379a5137be37aa643c96203b5fe30ce7840d19c470367c7479eaf046b67e3109c6f3d786aa62f67b3ad5a8e9e0fc978855f9c83e638c3993e7417ab916b87c85a5e76f69a9c7d5f594ffe5fc88405c56a32486081a366399d1b7d7bba5fc1c9a5a4f6596b385cfad6997b85eedbfe2918a3335e5bfbe7b5ba516244177a366dc97844cb5d9bf841dcccfa493e8ea2ba3f4fc2fd0ab3ea4f21afc243cef2242e8a38ebbcba392a159ca554aa63d6800f933b4fab82e5373fbbd32dd610534aadd092358a0954ba54abaaaeca086ab205fec97e5550e2a8a37d95c0b513a7519f905ba86e41feac729e67353e7e8049966ee33c61f4111f714a44ec74844c43961553b13eb87078645fb7c3af2fb16eaaa62053eed6d482509640ce08136b2516545315cd500d19424b15e82afda5612e86095df26fc5d9ed62577fff0959300a2f0b040000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'access-control-allow-origin': '*',
+        'cache-control': 'private, no-cache, no-store, must-revalidate',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8',
+        date: 'Thu, 17 Dec 2015 17:50:29 GMT',
+        expires: '-1',
+        pragma: 'no-cache',
+        server: 'nginx/1.6.2',
+        'set-cookie':
+         [ 'bgAbTest=eyJjaWQiOiIyZjcwNmM4Zi1iZWY2LTQzMzEtYjY1My1mZmE4NTYwYzRiNjUifQ==; path=/',
+           'bgAbTest.sig=hMReMrvrvNrWLdhz4UsBVQUOKyE; path=/' ],
+        'strict-transport-security': 'max-age=31536000',
+        vary: 'Accept-Encoding',
+        'x-content-type-options': 'nosniff',
+        'x-frame-options': 'deny',
+        'x-xss-protection': '1; mode=block',
+        'content-length': '659',
+        connection: 'Close' });
 
       return callRPC('getinfo')
       .then(function(result) {
         result.token.should.equal(true);
         result.wallet.should.equal('2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX');
         result.keychain.should.equal(true);
-        result.balance.should.equal(565.47875758);
+        result.balance.should.equal(566.87002829);
       });
     });
 
     it('getwalletinfo', function() {
       nock('https://test.bitgo.com:443')
-      .persist()
       .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
       .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","canSendInstant":true,"label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-19T19:42:04.212Z","expires":"2015-01-19T19:42:14.212Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":71873015758,"balance":81873015758,"unconfirmedReceives":20000,"unconfirmedSends":30000,"pendingApprovals":[]});
       return callRPC('getwalletinfo')
@@ -475,75 +501,44 @@ describe('BitGoD', function() {
 
     it('getbalance', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents')
-      .reply(200, {"unspents":[ { tx_hash: 'e221a92abd3b446787550d7c34954b76a4fb49f5eb1091bdc9a9adabeed30de5',
-        tx_output_n: 0,
-        date: '2015-07-07T20:37:18.110Z',
-        address: '2MvjLv8oyxrnYdTZ8zmmb1QE8uf16VVi4fZ',
-        script: 'a9142639ced1448d394e718ad6f51d4c427f1eb6622b87',
-        value: 56547875758,
-        blockHeight: -1,
-        wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-        redeemScript: '522102598ab55d2be39e124fec05bdcc5150e71363c7c41156c67f9fcdccd88b3961de21033cbe7d4b35f76bf777dd87557d19d06b50c3ec60f13e4dad5029b63b659399102102ee327f905a9eb37ea806172d6432fce61e0fe63c2b2999266d261d188f0a430853ae',
-        chainPath: '/1/105',
-        isChange: true,
-        confirmations: 0 },
-        { tx_hash: '15a5690c2b5e5b601dc4ec53d060396e247f7c7aaf73cfdce6bbb0f1aa457ee6',
-          tx_output_n: 0,
-          date: '2015-07-07T20:40:07.594Z',
-          address: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          script: 'a914b238b35dd6399962fbc746f467774c2cf4966a5d87',
-          value: 139127071,
-          blockHeight: -1,
-          wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          redeemScript: '522102e8ff22efc04a4d85e4dc383058eaf163fb93bf847e450c2cdaf893298f1b4c1321034eb5acb9d1134bcee9c211b23282fb67dc29fc4c78c630c89fa5b8c5146fe2a12102e5aecdb7e94c9c7e0dc119daab73504d849e2223cfdda60b395af5558c97806853ae',
-          chainPath: '/0/0',
-          isChange: null,
-          confirmations: 0 } ],"pendingTransactions":false});
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+        .reply(200, ["1f8b08000000000002038d53d96ea33014fd95cacf748a590ce42dcd568545340b4933aa46c6760849008735a4eabf8f49da9166d4d10c2f58f71e9f7bac73ee1bf81153d003ba86149d2248439d99bafcf959c44454411a0112b8e214cf0af0409b0f679e978e5a34312fced88cd2a7e8f0829cc0f28bb5801e71c88e02bd604579b7c2c7232bef604751f44919d70cf4cabc6212285b2ecea0c05bb6a3a2bfcd19bb88ca1b28e3a4eb2832d4ef21bc578c856cf474b3279bdf6443db082c3bf33867c55720f8017a9700a6499c0eb22a2d410f4a80e7718dcbeb84036bc90ec7a960f8fe06cebc0a0555f74308baaddbf44fb3908cb6b3d1305906b69ae90d3b44997270a9e91be5c6362ff9307ad4748d54c1b4587afafa7269123a9e35fb2c5b25c91e65593dda381946287e721f4fb535adf22a5da2935d0d6ac2dde14e3c83e37227063fc80fb2d0fb5721e379a5137be37aa643c96203b5fe30ce7840d19c470367c7479eaf046b67e3109c6f3d786aa62f67b3ad5a8e9e0fc978855f9c83e638c3993e7417ab916b87c85a5e76f69a9c7d5f594ffe5fc88405c56a32486081a366399d1b7d7bba5fc1c9a5a4f6596b385cfad6997b85eedbfe2918a3335e5bfbe7b5ba516244177a366dc97844cb5d9bf841dcccfa493e8ea2ba3f4fc2fd0ab3ea4f21afc243cef2242e8a38ebbcba392a159ca554aa63d6800f933b4fab82e5373fbbd32dd610534aadd092358a0954ba54abaaaeca086ab205fec97e5550e2a8a37d95c0b513a7519f905ba86e41feac729e67353e7e8049966ee33c61f4111f714a44ec74844c43961553b13eb87078645fb7c3af2fb16eaaa62053eed6d482509640ce08136b2516545315cd500d19424b15e82afda5612e86095df26fc5d9ed62577fff0959300a2f0b040000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': '659' });
+
       return callRPC('getbalance')
       .then(function(result) {
-        result.should.equal(565.47875758);
+        result.should.equal(566.87002829);
       });
     });
 
     it('getunconfirmedbalance', function() {
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+        .reply(200, ["1f8b08000000000002038d53d96ea33014fd95cacf748a590ce42dcd568545340b4933aa46c6760849008735a4eabf8f49da9166d4d10c2f58f71e9f7bac73ee1bf81153d003ba86149d2248439d99bafcf959c44454411a0112b8e214cf0af0409b0f679e978e5a34312fced88cd2a7e8f0829cc0f28bb5801e71c88e02bd604579b7c2c7232bef604751f44919d70cf4cabc6212285b2ecea0c05bb6a3a2bfcd19bb88ca1b28e3a4eb2832d4ef21bc578c856cf474b3279bdf6443db082c3bf33867c55720f8017a9700a6499c0eb22a2d410f4a80e7718dcbeb84036bc90ec7a960f8fe06cebc0a0555f74308baaddbf44fb3908cb6b3d1305906b69ae90d3b44997270a9e91be5c6362ff9307ad4748d54c1b4587afafa7269123a9e35fb2c5b25c91e65593dda381946287e721f4fb535adf22a5da2935d0d6ac2dde14e3c83e37227063fc80fb2d0fb5721e379a5137be37aa643c96203b5fe30ce7840d19c470367c7479eaf046b67e3109c6f3d786aa62f67b3ad5a8e9e0fc978855f9c83e638c3993e7417ab916b87c85a5e76f69a9c7d5f594ffe5fc88405c56a32486081a366399d1b7d7bba5fc1c9a5a4f6596b385cfad6997b85eedbfe2918a3335e5bfbe7b5ba516244177a366dc97844cb5d9bf841dcccfa493e8ea2ba3f4fc2fd0ab3ea4f21afc243cef2242e8a38ebbcba392a159ca554aa63d6800f933b4fab82e5373fbbd32dd610534aadd092358a0954ba54abaaaeca086ab205fec97e5550e2a8a37d95c0b513a7519f905ba86e41feac729e67353e7e8049966ee33c61f4111f714a44ec74844c43961553b13eb87078645fb7c3af2fb16eaaa62053eed6d482509640ce08136b2516545315cd500d19424b15e82afda5612e86095df26fc5d9ed62577fff0959300a2f0b040000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': '659' });
+
       return callRPC('getunconfirmedbalance')
       .then(function(result) {
-        result.should.equal(100);
+        result.should.equal(0);
       });
     });
 
     it('listaccounts', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents')
-      .reply(200, {"unspents":[ { tx_hash: 'e221a92abd3b446787550d7c34954b76a4fb49f5eb1091bdc9a9adabeed30de5',
-        tx_output_n: 0,
-        date: '2015-07-07T20:37:18.110Z',
-        address: '2MvjLv8oyxrnYdTZ8zmmb1QE8uf16VVi4fZ',
-        script: 'a9142639ced1448d394e718ad6f51d4c427f1eb6622b87',
-        value: 56547875758,
-        blockHeight: -1,
-        wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-        redeemScript: '522102598ab55d2be39e124fec05bdcc5150e71363c7c41156c67f9fcdccd88b3961de21033cbe7d4b35f76bf777dd87557d19d06b50c3ec60f13e4dad5029b63b659399102102ee327f905a9eb37ea806172d6432fce61e0fe63c2b2999266d261d188f0a430853ae',
-        chainPath: '/1/105',
-        isChange: true,
-        confirmations: 0 },
-        { tx_hash: '15a5690c2b5e5b601dc4ec53d060396e247f7c7aaf73cfdce6bbb0f1aa457ee6',
-          tx_output_n: 0,
-          date: '2015-07-07T20:40:07.594Z',
-          address: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          script: 'a914b238b35dd6399962fbc746f467774c2cf4966a5d87',
-          value: 139127071,
-          blockHeight: -1,
-          wallet: '2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX',
-          redeemScript: '522102e8ff22efc04a4d85e4dc383058eaf163fb93bf847e450c2cdaf893298f1b4c1321034eb5acb9d1134bcee9c211b23282fb67dc29fc4c78c630c89fa5b8c5146fe2a12102e5aecdb7e94c9c7e0dc119daab73504d849e2223cfdda60b395af5558c97806853ae',
-          chainPath: '/0/0',
-          isChange: null,
-          confirmations: 0 } ],"pendingTransactions":false});
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+        .reply(200, ["1f8b08000000000002038d53d96ea33014fd95cacf748a590ce42dcd568545340b4933aa46c6760849008735a4eabf8f49da9166d4d10c2f58f71e9f7bac73ee1bf81153d003ba86149d2248439d99bafcf959c44454411a0112b8e214cf0af0409b0f679e978e5a34312fced88cd2a7e8f0829cc0f28bb5801e71c88e02bd604579b7c2c7232bef604751f44919d70cf4cabc6212285b2ecea0c05bb6a3a2bfcd19bb88ca1b28e3a4eb2832d4ef21bc578c856cf474b3279bdf6443db082c3bf33867c55720f8017a9700a6499c0eb22a2d410f4a80e7718dcbeb84036bc90ec7a960f8fe06cebc0a0555f74308baaddbf44fb3908cb6b3d1305906b69ae90d3b44997270a9e91be5c6362ff9307ad4748d54c1b4587afafa7269123a9e35fb2c5b25c91e65593dda381946287e721f4fb535adf22a5da2935d0d6ac2dde14e3c83e37227063fc80fb2d0fb5721e379a5137be37aa643c96203b5fe30ce7840d19c470367c7479eaf046b67e3109c6f3d786aa62f67b3ad5a8e9e0fc978855f9c83e638c3993e7417ab916b87c85a5e76f69a9c7d5f594ffe5fc88405c56a32486081a366399d1b7d7bba5fc1c9a5a4f6596b385cfad6997b85eedbfe2918a3335e5bfbe7b5ba516244177a366dc97844cb5d9bf841dcccfa493e8ea2ba3f4fc2fd0ab3ea4f21afc243cef2242e8a38ebbcba392a159ca554aa63d6800f933b4fab82e5373fbbd32dd610534aadd092358a0954ba54abaaaeca086ab205fec97e5550e2a8a37d95c0b513a7519f905ba86e41feac729e67353e7e8049966ee33c61f4111f714a44ec74844c43961553b13eb87078645fb7c3af2fb16eaaa62053eed6d482509640ce08136b2516545315cd500d19424b15e82afda5612e86095df26fc5d9ed62577fff0959300a2f0b040000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': '659' });
+
       return callRPC('listaccounts')
       .then(function(result) {
         result.should.have.property('');
-        result[''].should.equal(565.47875758);
+        result[''].should.equal(566.87002829);
       });
     });
   });
@@ -555,7 +550,8 @@ describe('BitGoD', function() {
       nock('https://test.bitgo.com:443')
         .persist()
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents')
-        .reply(200, {"unspents":[{"confirmations":1,"address":"2N2XYoQKXQGUXJUG7AvjA1LAGWzf65RcBHG",instant: true,"tx_hash":"fd426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":0,"value":10000000000,"script":"a91465cf7dc1dc237ad59225140773994a747674e42387","redeemScript":"5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae","chainPath":"/0/27"},{"confirmations":0,"address":"2N8BJoXnpt9ByzxbxZY5ePrps1vbSmLG6M9",instant: false,"tx_hash":"ed426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":1,"value":71873005758,"script":"a914a3cc3df0570bc12afa1fc2202bb6d6e366c1086787","redeemScript":"522102907b7674fad76d9fcfd95914f6ef5bfbb4accd1c27d050451fffd47eca9748b621027b5afd6ad827932a3a541d44e36d596d46cd23f309625739b2a9563f96fae6762102d990d4984d7680242680bc86c1c890fb6a027f30057e5e0f0eeeaed5f6f90bd753ae","chainPath":"/1/72"}],"pendingTransactions":false});
+        .reply(200, {"unspents":[{"confirmations":1,"address":"2N2XYoQKXQGUXJUG7AvjA1LAGWzf65RcBHG",instant: true,"tx_hash":"fd426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":0,"value":10000000000,"script":"a91465cf7dc1dc237ad59225140773994a747674e42387","redeemScript":"5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae","witnessScript": "522102ff35ada058a5a99af709589e414f095e5c76a3702948a3502c27e918210edabf2102629066ac85a664aa541665350bcc21af81e3a229c0ea7299fde3feb63e4574142102e58354a9742e4eaa53763739e3cc3f5cc40577dbf9c5b8400a8d55420","chainPath":"/10/27"},{"confirmations":0,"address":"2N8BJoXnpt9ByzxbxZY5ePrps1vbSmLG6M9",instant: false,"tx_hash":"ed426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":1,"value":71873005758,"script":"a914a3cc3df0570bc12afa1fc2202bb6d6e366c1086787","redeemScript":"522102907b7674fad76d9fcfd95914f6ef5bfbb4accd1c27d050451fffd47eca9748b621027b5afd6ad827932a3a541d44e36d596d46cd23f309625739b2a9563f96fae6762102d990d4984d7680242680bc86c1c890fb6a027f30057e5e0f0eeeaed5f6f90bd753ae",
+  "chainPath":"/1/72"}],"pendingTransactions":false});
     });
 
     it('listunspent', function() {
@@ -570,6 +566,8 @@ describe('BitGoD', function() {
         u.account.should.equal('');
         u.scriptPubKey.should.equal('a91465cf7dc1dc237ad59225140773994a747674e42387');
         u.redeemScript.should.equal('5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae');
+        u.witnessScript.should.equal('522102ff35ada058a5a99af709589e414f095e5c76a3702948a3502c27e918210edabf2102629066ac85a664aa541665350bcc21af81e3a229c0ea7299fde3feb63e4574142102e58354a9742e4eaa53763739e3cc3f5cc40577dbf9c5b8400a8d55420');
+        u.isSegwit.should.equal(true);
         u.amount.should.equal(100);
         u.satoshis.should.equal(10000000000);
         u.confirmations.should.equal(1);
@@ -668,6 +666,34 @@ describe('BitGoD', function() {
       return callRPC('listtransactions', "", 5, 5)
       .then(function(result) {
         result.should.eql(results.txList3);
+      });
+    });
+
+    it('listtransactions with sent travel info', function() {
+      nock.cleanAll();
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx?limit=500')
+        .reply(200, ["1f8b0800000000000203bd97d9761a491286df855b6c2bf745e7f485d857894d48309e8b5ca124d6a240804fbffb04c8dd966cab6d77f7196e5455ca8cc88c8cf8e3cb4fb92c358b8d7159b25c6c7297fff9944b7cee32477140417aa11465c229a7440c5878cfad8c38482550b4d63985ad25d43941304291d828892508e6e6dee516cb746e66c931f89ad94cc1a68951c81090515619cbbc950a0be9b9e70153474da03c044d9c668451679146044944c1bd70e092834d6fb20096c085788ff87b8c06085d327489e4072de91846c400039406d3ef72c962b5cd9e37b54ac32e596e379f97429525cc5a6390b05a45a408e196aaa834258850aa3d31162bee02234a1bed820a440b46bd21da19078efeb078b3cdc04b7de1c33e77897e7ff78d2f862222823bc383b4d252c98357146c0a613d2c8378a914e2021b0c0be2b061f0655010065907117bcb17fe8e2fed38f341061e217a0639cb0dbc466721845213e69d765a681abc70367064248f246af0e52d0a58ff8a2fa331930c4e9e6058a5f30c314ca361c8491b3178418c796ea2a61173c72d84c0c7a0246192442bf12ff98a5e63c3213988e30ef2c322c545a4d1062495e3920586a5b5144e8b5b1f91c722c01b0ecc0621d4aff8b2102441a5929233487bc388603e1a230c81cdba683d865d7ba2828471d1521f6004c35cc37088efaff88a52527e8a98918e10c32383e4a08a7b4c9115d262cc82425a46a63d6391391f2ce308ea8deb60227ddbd77fdfe596e72fcff9bf831748cf7739e3dc72bbc84e4574ad87a6c8faa5def5f5a27c1055756c55d464519b3c8e446ba83b9b7b30bf33b32d5414e6e8f90755b569270bf894a5dbf02ee7a626599c2d9f9f5ed6c1b34ffcda67e9161cec529174ed2aac3039eea4af6a7b57ab92ac72d75ceb173e29950211acbf1823af8cb59fd26c3ad955e649ab3cbe5fd6caee51148a2c52bf5f18de4aeff75f6fe01496b0c8d2243c87e5df58d93f8de85736da595899696fc1d683643a1dec6eb7d5c1e8f6705b78ec8e8f6658a8d22f36de13c5be6fe46f45c62d173101d1fedc0b3083ec0a0b9f2c26b9cb68669b7092d44d664e3e3ebfa7c1856417fc2035bb30ab2fe2f24b0fe19262e283a688c653ca82d6622d8577384aa419fd2b3dd71fa4c6673d4f97f3f2220be92a4d36a17eb6cba50ad649a8701020a85346ad46140b110467d47c330be6f44bcd41d864f0af6cf9b539c64e521b3d3ee9bcc1d1904819f4341a39e5e474ec2f7a64fd5fea8ecb576de3b4ac3b339b859f4fa36c79e57d1a369b9f9e61e6cfe9f1a2964f71ea6c6d331cc00aa2d629e80ad272296384180bcb63a00a53eda05d386898dc4163b4023a096c8a63e5bd36d0a583f6c838715ed6177b04541e0b22a3f0d07248101e1abfa01691809810dc43ff5318240f2b3048753420eb0ada4964d2412f712fec754c7612cc8b53e95d1021e1b42194b95339bbf4b0ca5ea760eed3c75cb2fb98bbfc987b4c0269ef1bad38c8aa253f4acb0f85abc7a7df7efb987bf731771a82e16f0219717a3c0505a66c4ecf44c163767a140c9ee64b1fce069d9b9fe71a485e73fe727e75c96a7a3602ff099bf3a78d9965e70ff92b5c2c1792ea7dffe9d9af7bfebe5a1ebac7fe8dc50f774ffbbeb0cbfaedfdb6dde26a52edf4fc5c6dab37ad52a0abd55d0f2751a6a67957d4238bcb6b3c15add9c37152ee967b3726df4c875d3dae94242ac46e294cb7c741b52664a723eae5956edbab75ac34c745ff3420053aed6e5b69730c8430dc0b0c6738ddd66e6aed6b7f7335ee1d487eb36f346ab24d07781f8a0f9bc7adb10599a1567356ecc55aab9cbfbdb830bb61e998f5c3ba51ef6c1019ab76bf54e469a597dd3f5ed51efcc366cd5bf1503fe8eeb1dc79acb60a3e3f1b9256af9831fe506c5667ee3a149f382e544bba76d3beef7726744206ae354349a575bd5e5d11e32f2e2ac5db7490b9d0eca27e72376eafaab3dec4cd9757858fb9df7327d1b2b3a57b9c3eb753f4e247821651437a796700da9407be031891dc6a1122c5002b3e2acea0d8037460c22239d5e534249329148922d0ddd94956cf5a0670869d08340271702d40186884a67d82c328011683e2813a831de3a0220c729a7bc49c261659487af33d1e06e47586901089f08283000130c918000628b47f223080b100c3501bcc6aaa354040c00818cf61012cf4967e627dc9e9074df89f3c8c814ff45ff130120236184544d10170c3265540517b2740d32045a811101f60766d8c97062b90db006c2924d78e28f11687889fe210562caf578e8ec78b7eed38e4c40ccdb1d7786a2f4c8657bbd2447d695642094928e7f80d0ec1af398448f61689fc4a9f25e845affe2e89ec56e3e95a1c6fb7f4f6aae71bcd714d0e06715d6bd0b2c3a3ab87dd8b7efba7b1b761e4efd9fbfb30f29ec2fc7396fc031a212f37f6154b10f16396d84030dee4084d0c900324a640c011d06a230f50de9ea3bfac03f64120fd1647fcb8f17fc3118524ab2ebf4b113f8692af29e25fd0945714819fd7fb4f38e2a78efb0f8ef8f3bcbfe108048b36016e8054216902dc6f105cd3285ca0e01217827326c2a604c2c658b81c83ca38a5813650d080185e7ec311604a07386ff8318c0cf15640c8e4499128c025c811c096625201a238b83a731f013c84715e29d0fa9fc084ee58576e2657b3a1b8eb8707d9486fd346f7ff8c097897ed1ab558efcd47af30615cb4cd8c36a7a6719b5427a3e3be78dfce2e26f74bf4b4dba1c2d8a7a6742b8fb3ca753a6a2a3fcc77fdfac21ee4ea5039ee5b643b5a35f6f38727f638cb3726c7d9a0935fa04969dcf68dbb7d6b753c14643a5af70eddd93a36d85eaceaa5569be7fbcbb9ecedf349db4ccc851b8de6c9aa5b3e5c17d9b65c9f16d85581de5f3c99f25a88e3a01226f31adedeb006aff5cc351fb19eac86eb9bfe22ae6ca55b1a1b942f0f93c417ae0ff564f2707514f541561f779bbbc765bdb7d975eaac711fd24efe309f87c54d3bff542b9aa32e1e4563d846e92cfad6ddb05e5ccd6790a1a3f5208d05b998faf26cb23a5c0f64b5ff58390eef7b777499746b28bfebdcb566cb807b0fed8290c9f8c60eb6fd36ed0c46b37c860795a49836fdc57274bb5a3de0fae80e09b744bffd082928dcd1e1168343507045d7d2070e5799e03d0ec4638ce062632993c8050a544c41b7acfb0a2938393900dd4b9fdbe067a125a784cfcc0c06d1dfff07921dd78894130000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8'});
+
+      return callRPC('listtransactions', "", 3)
+      .then(function(result) {
+        result.should.eql(results.txList4);
+      });
+    });
+
+    it('listtransactions, decrypting received travel info', function() {
+      nock.cleanAll();
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx?limit=500')
+        .reply(200, ["1f8b0800000000000203ad56d97222b912fd977ab57bac7d71c43c98c5e006bc005e9aebfba025056563c05505b6e9e87f9f2ce88976f72c317defd40b9290ce918e32f3e87356156e51ba50e5cb45991dffe77396c7ec38e31408e8a88ce14205138c4a40558cd2eb44411b4592f72118ea3de32128460949cc27cd3c23b8363bcc16cbe2c9cdf32dc4ae2b6788e952521a8038e38df3227a6da8d25146099407ee804b00cb82154cf0e089258c68c2915e05a49488195d05888414ea03911f281913722cc831d1bf58cd273823014e3016a10fb37cb15a57fb43ad0ad8e4cb75f9752bdc7826bc778e286f4d228631e9b949c6724618e73632e7a991010433d6d9000698558247c76c7001897e47bc5857c872b688f09a1d932f877fe0122411a6647012b4d79e6b09d170c454ca47dc068bda18221575143724f1c0c8e50828477c40c5fe8a8bfe09970d5244d02013aae748f0d26137058f126acb440c3658653944153c48e2b44c2c59e48a9e00b53fc3e52c155ae0cd338abb0c51104179728204ed1345162244942e599ea80cd2a3043181d14c6896bca63fc595a2a54e6270b02003c6872746aac49307a24d905a80a0da7b8eb7257d4c245205d8a3203c28657e86cba3488a6ba3b51418f64e302562724e3986870dc9478aa78ecc80c679c9f30838435069713aeafb335c496b2e6bc59c0e8c39990406073732524ebcd29e520186589d848d42241122782109e69bb4e012ff6baeff1e66cbddc83efe37d8c1f03ccc5c08cbf5a2aa93e8dcdeb8a618b586e7e78bf69bea986dffd44c17dde9e327d5bfb197e51dc26fdc7c8d194525d97f9855e5205fe05055ace1300b33972f76c8bbd6fb3cd873d2ef395bd748b029547ee557b0a26cbbd1b163fd6db7c3aad3dbdeb37dc7c9b9568451fb0d8c7d07367829aad97473fa94f7db93bb65b71d1e55a329128faf0b27fbc5ddeb8f07a865814555e4b097e5dfd8d9ffabe80f18830a566e365c88e7713e9b8d37d7ebcef8d3f5db75e3f16ab275378d0eff86f18119f1e720ff933261b9483916edaf5e40f1ea56b088f9629a1d27372fa12ea965e56a8eaffd0202e41b88e3c26d607eb648cb6f1e2235a72c82e584a73a64b1d652ab550c34696205ffbb7a6e7fd196eeea79b17c6a2f2a2856455ec2d90e576a033e68cc702c4098a7827b4b38550a9414dcfd6115ae19b57a63282bfcab5afe0827445d6a53a4759d77343996b8404fe34972c9ea6b7fe79167ff923b2ebfb38d7a5bb76e3e877f1e46d5f224c602caf21faf704ffbf07897cbb54e976bdf83374421dc0783aea0bdd43a25d4587999801bca6d40bb08689832a0317a854e828792d4c4681dba34d8485c50bb6d7dc36358e5a9623aa98896c34045347ec53d6140845232a2ff198a258f1a04e436392ceb06ed24091dd04bc23bbc4b57d505f3a84ebd23a634de364a99d5e91c8ab755f57d08669fefb37c739f1ddf678f39b0c1ebc77e1a579d56fc54b41f1a278f2fbffe7a9f1dde67f5148abf394644ddac45c12565dd66069b55dd54025b4fcb083bc0109e766b1d06afdb8decba215fcd7620f80f94bba1d2cdabddc0c1096db61b79e76ef4b2e70dfbf1d5f2ed6a3bbaf0f4e1f6e575a4fcf2ecfa6e3de84b33ed5c0ee39359772efa2de0abd5ed90e64917ae77dbb49f3c6d3fd399eacf1fb6d3f6557b78e10e7ac5cd959d9cb63469a4ab16ccd6db71a7abf4e5a53a6bafecc09f3ca7d3dea4195fc6acc16757eb7ed19be00be1e65551bcc3d9ba7bd11d9cc78b93c9f08d1d94af1f3f76f5808fe92b341fcac7b5f30d5d917e6fde1ca66ebf7d707d74e43637ad6d3582e78f67972561133318b59ab2381d56778f27dd87f8503ecb7e7a3b7bb357dbf6e563a7df8807f31bd61f362b211f9abdce3c9c43f345d246a765bb1783bbd1e5944fd938f4e7243fed9f3faf4e988b4747a7cdeb625c05e85d91517e3b19ac3af3e1343c2d4f1af7d997ac2e5a7ebe0c8fb3bd9d92771f03ab92c5f08ac1e1a3cd447cdfe163444b6f15244ef1b112939102931dd0819948accecb19e4d319268961e8eea226c08257ecbdf36b79a57554566e8e93f897df00e5b21264410b0000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8'});
+
+      return callRPC('listtransactions', "", 1, 0, 0, true)
+      .then(function(result) {
+        result.should.eql(results.txList5);
       });
     });
   });
@@ -770,7 +796,8 @@ describe('BitGoD', function() {
 
       nock('https://test.bitgo.com:443')
       .get('/api/v1/block/00000000e01d2696b1b6fe51883e0fd0ece2cc45f7eafe86e3d839571c78b7cb')
-      .reply(200, ["1f8b08000000000002034d97c98e65471186dfa5d636ca1872f27320218158444eb8856423dbb041bc3b5f5cbca01755b7afeae489e19ff2df5fdfced70f5fe5f77fb7c8d136db92d5dead3286ddf24eb9fbeade5e5fbff1ee68d7ceb059bbec3e56dfebebbbaf1fefb7bffdf8dbd70f26a3f4f1ddd789df2e276b91fa7df1efc5ff28ed072f3f58ff43d3f9679ed83fc6b79ffef4f32f7fe7cfaca8ab0c556b5eb4f6367ae74ffef1cbfdd7b79ffff9ebff95d8de3b1420d36bbde7ed27dea6ac706da28f020bafe7eb566ea5c8d224f61e6772da6fbfc44fbfc6feeddbcf3f71e25fbede3ad1de0e69b39bdd29d174fbec1edde8ebc4ee4b0b6f3b7395ea3b66b44e3f941021fd702415d411b3e5647cbf671252cee1a38ef3dea8badf28abd11f63b1217354d3eabdb779ae0547c8ad3a87a98fa95ac62e9dd3968c2db7dd59fdf6b9e3d5d9b7ede26bded2ea9c5bef0e3576c31163ab5baf746db187de17c2bacaeed38e6cab6d8d1e8de58ed1753669729fdcb3eb1ad9c8e088292fe841c44699d413e6dbfb79fd9c11be57f472f42e953ba36b6d0c63c6721dfebce94a045caaea6f0c1d7314b328c654975c3d63ed79746ab13bb414977d25e6e86b51e7686331b56a398b525bddaddd767aafeb95dddeb9eeefde72d6e0b1916fb51343e35cb1c2cf4a0d47a6d5dab28a0d7eb731f7356cf5754ce37a1c7e0f5fd7fa6ab3d615f5b4716ae360332fbbdcbb0a48b809cc37eb870bb74b0772a6a7db5b6b3384f7aadb1c60e34c0830348b1baeb040ad4edb6b3d8e5876a145a9733507346ac7fc580551b75726f8bacf9005bfc0c66b7aaf351dbdac7202f42847b4ce166a9cbddbb9afef26f5b6fea0dceb563f0fd966928316de0214da7579616af4b65602bec83c035abd12c64ec1e7399c32daae55e575eda0292b9f3c1720f45252dfe7316c2deb83ceae6c1b4dd8fdcc16b6d6ddbe86ec751be2e051cba483a7adccfb2a1b13bff7ee053597586ec4f7a1b098cbfcb1b5c71afcac765a31b1d7279b93ba47ec2975c2c0f57aed41e90cc4f696442767696b3112d0ed2d50633d54cebdcadc063d43d158fdf93c8b9733f0c7664697facecaa5ea6973be77e3ae65ad4b836fbc5febf2b1bb8eeaebf9e07d006a2e5e52f7547a84949228e688ca0665dd5aaab47d9924d558b3c57bd8f698eff8b3b75b5df3f9856890c4d65b0e796179023c3b2d73f63b7658f4f5b6ca1639b1ce14f8c669afd4d2bc9540c6c2bad3da03f82880dcace28c7eaaa00563d6d67a03c48c718df6e0356feb8e5a4f29b3c2ba316540d6c179add0e9b8a917de40b61b6f0e7a6337d17745aece34d4671b2af300f6394841f812e13407ca0d55e4532eb59d3d5344a226be58ac0eb453625c08bea21c1fd0b8b206fe37a8a9a7369c7ad7f45ddd139d0b90e93b8c0b96b0f6378b0808af1123450a291490322b2d523e6c6b826e18129c5f72840d433d2e4680d8706c4d34b17364aac0e659ae5f203503e5bc8c128086ddc6b46de8f39d1b613b615805d86910036939ef96692350c9a2345a96417dd49b3568631e9e98ad968f8e0fc0cd9147a33db402d0015bc604de11471e535d10e86dbc4bfb9b49295b0a10a817d14ea363eaa1bd0a44caa9af09675365a4b51ae81d2feba9afb5160db6b2d012ef5852af145f93ecbb769765313d77613b31912a84276967ad2bc271b2318ef846cff00736c852f0aadd56cd592473728b69826bced2c1b3bd1c84417ec4d82e4455b41d4b7a0bbbd803dd44574f6b9600076271c904312fc2e1a348aca109c77bfb4128d8af17aa2c05b3f3c1eceac088106d2c6ca6f0c10716ffaeb8cf5259dbaa8513efe9885998acde317c31a8c7d8d1dba2ac5eb06fdeca3c38027fa6c0a0a8ebd3eee19cc1730dc1028b3df53caea93294352a5d6e296a7ea5074bb9894e9d5be0f3aa708612865f64665ec4a43db772fbe033bbb29b04226d20db842576f36933378241e86b30475981d7206fdc326ea06690e1d0122c6f1d0dc32ab61f65f738571bb815ee9e9e4aa94fde4e9ce87a30fe384286af4e21b530ca0e81234df692573047ec145ab2a64eaf2539d2d8cde055e2d83daea37e394861b24046da50de8f34639cce6190ff384a17ed2088fe713335a3bbd3a224e8e73e88688d99d988d8e40404e6b9986354c347d122ec66bb7a6f14f9512d64f9328bb22419f660437b68f8c08c3b31526fd9780013754853c83d97e390ec9a32a491e8a4524c17698424af4014a28b0f3d99912eec05a40b52c1ff148f37fd4d0426c66ec4a3b5f388d95149fc93b4439c706b29f634a34096ac0633facade95c000626be51b5414dbef1843495c1c7c1de462328df36b7dd9ac4db62a3dfd1d3b24216c521e490aa9c652e384e5a00bba9f6e1698610bf88463286f6513410cadb8ae2911c4723595e42ce8b96e7918c4c25efa719ca27d968a021c01cb9be0aa4823b4cd88a78609cb30234f4210dcb00097ca1f1ffa1c5e156dc57f739c6418765d2db0fb7900128273c7ab201ebd24a33a12d236b9e66abd9700b594cc8a5335c4367151e7999b3cf7d00ccc6a8d12857cd58e1338c8b47d433204e4e05e97c01b081962b631bf54fa143ec8cc47de8adf96a6981ec8db68039972ae95299979164646e2e7ca41b548f14ded1904993c82a4463424138ab15ae2211cbca57f2c2d73ec1d022ec9884dbb8080d1b0cf859d16a49aab466e04a59fe9d33708d70f92741e10325366212545b1a25c6c0f36e6ac9a24439825a3d8c0a73377f679a4406c384fc042886359c19f8e33faa6180fb182057b5b8704fdb0f602d6789c559f243b4e8d8c94a5430cdca01bbd00363d85b03c1e091199a0e9b58142106b372986ebc83c075fb8ef634577710721d28617168f3966608c5d038fadf83319761205855b41e141393d95013ea578b4cf4672a0907da4b07f88f26efec0258265a2d4cc0d6bc7200002d87ae09ac5d5b2a838e5f79213f18801885fe20fcca2048a582c6480d05082133b136ae93fe85024c4b9dcc92b702d3742b47e385e7187089d00414c836669bec41c4039014ac712842b8902fa4a3431ee591d7696f90178050513ec06156ea08f9a2b0efcbcc873eca0810c32bafac41df80dec8501a1be87fd24b41a4844ec49e6087e63a6c61cecd6cc679ae15b3ca1f872b3804d9c237a69c9a7ae9155442a1f7f70bda1264207233d1443231ff20505a25ed5f6439fd914a190ba01312e0c0c93ec43b8073187f481869f1334989ab38ff1322b4bde8012b479e11c0fa509123217c0be2e607e9f8bd5049444538791c4e6b3c1047721f048641ec66df692a332dd6ae6c2bc99710c0a498724f7ff792a44877d4ed5981f2143987e6453e17c809500b193b4701ccfb71305f3d66b89afcf38d98e7033c7c71b77ec05a38430ece92c0c82a85790b20def893fc09dcc73b0844f1cb2f3bbf041cd92ee00d59017c210b774792441ae6bdc24f3e6392a913303dab5e29bd8446214def6b67dfdf53fff0569f4c26bf4100000"], { 'access-control-allow-headers': 'content-type, authorization',
+      .reply(200, ["1f8b08000000000002034d97c98e65471186dfa5d636ca1872f27320218158444eb8856423dbb041bc3b5f5cbca01755b7afeae489e19ff2df5fdfced70f5fe5f77fb7c8d136db92d5dead3286ddf24eb9fbeade5e5fbff1ee68d7ceb059bbec3e56dfebebbbaf1fefb7bffdf8dbd70f26a3f4f1ddd789df2e276b91fa7df1efc5ff28ed072f3f58ff43d3f9679ed83fc6b79ffef4f32f7fe7cfaca8ab0c556b5eb4f6367ae74ffef1cbfdd7b79ffff9ebff95d8de3b1420d36bbde7ed27dea6ac706da28f020bafe7eb566ea5c8d224f61e6772da6fbfc44fbfc6feeddbcf3f71e25fbede3ad1de0e69b39bdd29d174fbec1edde8ebc4ee4b0b6f3b7395ea3b66b44e3f941021fd702415d411b3e5647cbf671252cee1a38ef3dea8badf28abd11f63b1217354d3eabdb779ae0547c8ad3a87a98fa95ac62e9dd3968c2db7dd59fdf6b9e3d5d9b7ede26bded2ea9c5bef0e3576c31163ab5baf746db187de17c2bacaeed38e6cab6d8d1e8de58ed1753669729fdcb3eb1ad9c8e088292fe841c44699d413e6dbfb79fd9c11be57f472f42e953ba36b6d0c63c6721dfebce94a045caaea6f0c1d7314b328c654975c3d63ed79746ab13bb414977d25e6e86b51e7686331b56a398b525bddaddd767aafeb95dddeb9eeefde72d6e0b1916fb51343e35cb1c2cf4a0d47a6d5dab28a0d7eb731f7356cf5754ce37a1c7e0f5fd7fa6ab3d615f5b4716ae360332fbbdcbb0a48b809cc37eb870bb74b0772a6a7db5b6b3384f7aadb1c60e34c0830348b1baeb040ad4edb6b3d8e5876a145a9733507346ac7fc580551b75726f8bacf9005bfc0c66b7aaf351dbdac7202f42847b4ce166a9cbddbb9afef26f5b6fea0dceb563f0fd966928316de0214da7579616af4b65602bec83c035abd12c64ec1e7399c32daae55e575eda0292b9f3c1720f45252dfe7316c2deb83ceae6c1b4dd8fdcc16b6d6ddbe86ec751be2e051cba483a7adccfb2a1b13bff7ee053597586ec4f7a1b098cbfcb1b5c71afcac765a31b1d7279b93ba47ec2975c2c0f57aed41e90cc4f696442767696b3112d0ed2d50633d54cebdcadc063d43d158fdf93c8b9733f0c7664697facecaa5ea6973be77e3ae65ad4b836fbc5febf2b1bb8eeaebf9e07d006a2e5e52f7547a84949228e688ca0665dd5aaab47d9924d558b3c57bd8f698eff8b3b75b5df3f9856890c4d65b0e796179023c3b2d73f63b7658f4f5b6ca1639b1ce14f8c669afd4d2bc9540c6c2bad3da03f82880dcace28c7eaaa00563d6d67a03c48c718df6e0356feb8e5a4f29b3c2ba316540d6c179add0e9b8a917de40b61b6f0e7a6337d17745aece34d4671b2af300f6394841f812e13407ca0d55e4532eb59d3d5344a226be58ac0eb453625c08bea21c1fd0b8b206fe37a8a9a7369c7ad7f45ddd139d0b90e93b8c0b96b0f6378b0808af1123450a291490322b2d523e6c6b826e18129c5f72840d433d2e4680d8706c4d34b17364aac0e659ae5f203503e5bc8c128086ddc6b46de8f39d1b613b615805d86910036939ef96692350c9a2345a96417dd49b3568631e9e98ad968f8e0fc0cd9147a33db402d0015bc604de11471e535d10e86dbc4bfb9b49295b0a10a817d14ea363eaa1bd0a44caa9af09675365a4b51ae81d2feba9afb5160db6b2d012ef5852af145f93ecbb769765313d77613b31912a84276967ad2bc271b2318ef846cff00736c852f0aadd56cd592473728b69826bced2c1b3bd1c84417ec4d82e4455b41d4b7a0bbbd803dd44574f6b9600076271c904312fc2e1a348aca109c77bfb4128d8af17aa2c05b3f3c1eceac088106d2c6ca6f0c10716ffaeb8cf5259dbaa8513efe9885998acde317c31a8c7d8d1dba2ac5eb06fdeca3c38027fa6c0a0a8ebd3eee19cc1730dc1028b3df53caea93294352a5d6e296a7ea5074bb9894e9d5be0f3aa708612865f64665ec4a43db772fbe033bbb29b04226d20db842576f36933378241e86b30475981d7206fdc326ea06690e1d0122c6f1d0dc32ab61f65f738571bb815ee9e9e4aa94fde4e9ce87a30fe384286af4e21b530ca0e81234df692573047ec145ab2a64eaf2539d2d8cde055e2d83daea37e394861b24046da50de8f34639cce6190ff384a17ed2088fe713335a3bbd3a224e8e73e88688d99d988d8e40404e6b9986354c347d122ec66bb7a6f14f9512d64f9328bb22419f660437b68f8c08c3b31526fd9780013754853c83d97e390ec9a32a491e8a4524c17698424af4014a28b0f3d99912eec05a40b52c1ff148f37fd4d0426c66ec4a3b5f388d95149fc93b4439c706b29f634a34096ac0633facade95c000626be51b5414dbef1843495c1c7c1de462328df36b7dd9ac4db62a3dfd1d3b24216c521e490aa9c652e384e5a00bba9f6e1698610bf88463286f6513410cadb8ae2911c4723595e42ce8b96e7918c4c25efa719ca27d968a021c01cb9be0aa4823b4cd88a78609cb30234f4210dcb00097ca1f1ffa1c5e156dc57f739c6418765d2db0fb7900128273c7ab201ebd24a33a12d236b9e66abd9700b594cc8a5335c4367151e7999b3cf7d00ccc6a8d12857cd58e1338c8b47d433204e4e05e97c01b081962b631bf54fa143ec8cc47de8adf96a6981ec8db68039972ae95299979164646e2e7ca41b548f14ded1904993c82a4463424138ab15ae2211cbca57f2c2d73ec1d022ec9884dbb8080d1b0cf859d16a49aab466e04a59fe9d33708d70f92741e10325366212545b1a25c6c0f36e6ac9a24439825a3d8c0a73377f679a4406c384fc042886359c19f8e33faa6180fb182057b5b8704fdb0f602d6789c559f243b4e8d8c94a5430cdca01bbd00363d85b03c1e091199a0e9b58142106b372986ebc83c075fb8ef634577710721d28617168f3966608c5d038fadf83319761205855b41e141393d95013ea578b4cf4672a0907da4b07f88f26efec0258265a2d4cc0d6bc7200002d87ae09ac5d5b2a838e5f79213f18801885fe20fcca2048a582c6480d05082133b136ae93fe85024c4b9dcc92b702d3742b47e385e7187089d00414c836669bec41c4039014ac712842b8902fa4a3431ee591d7696f90178050513ec06156ea08f9a2b0efcbcc873eca0810c32bafac41df80dec8501a1be87fd24b41a4844ec49e6087e63a6c61cecd6cc679ae15b3ca1f872b3804d9c237a69c9a7ae9155442a1f7f70bda1264207233d1443231ff20505a25ed5f6439fd914a190ba01312e0c0c93ec43b8073187f481869f1334989ab38ff1322b4bde8012b479e11c0fa509123217c0be2e607e9f8bd5049444538791c4e6b3c1047721f048641ec66df692a332dd6ae6c2bc99710c0a498724f7ff792a44877d4ed5981f2143987e6453e17c809500b193b4701ccfb71305f3d66b89afcf38d98e7033c7c71b77ec05a38430ece92c0c82a85790b20def893fc09dcc73b0844f1cb2f3bbf041cd92ee00d59017c210b774792441ae6bdc24f3e6392a913303dab5e29bd8446214def6b67dfdf53fff0569f4c26bf4100000"], {
+        'access-control-allow-headers': 'content-type, authorization',
         'content-encoding': 'gzip',
         'content-type': 'application/json; charset=utf-8',
         vary: 'Accept-Encoding',
@@ -778,7 +805,8 @@ describe('BitGoD', function() {
 
       nock('https://test.bitgo.com:443')
       .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx?limit=500&minHeight=318078')
-      .reply(200, ["1f8b0800000000000203ed9b5b5362c9b685ff8bcfd52772e63d79e3261c0542ae0227ce435e416940b9cb8efeef7b2e6b778bd5580db4754eed886d5444292c5332d7c71863ce4cfe71b55ad8d9d2fad5c37cb6bccafdcf3fae1ec255ee2ad0a49c139293149317d68944954d8c6b2a3d738a2bc998673a48cd0801cf157540258b100c24a5afbe5c05bb8a381225207e21f417223b147244e504f92f42c810af48112f00fc817cb99aaf574febd5d757b0c11fae72f8a0f57ebe9eadb2511a06fafbeeaeb6684f52a96e5b7edb1c4753b2ebf1b03eeece7795050eb8b1bfae7f1ff2ebd76f5f7e1f0ede0d57dfa50117f0341c8cf5e4b65cafb8d44b6c9b7fa69cc5adaff79a6fc3492985d64628a1bf5c3d2ceb0f337c70b558c72f577e6c1f66af63bf7ef7dfb310775739237efbdf2f5771b65a3cc4af337a37919e2df276a9d568ccca2fb2a2f7b56b3d9a55479381acf5ccddb2fff6977ff93a13f87d269fb01ef8c2fc7c961e1653fbaf5bae2837b8d64f71161e66a3ab5cb2bf2e716aeed7b99f8ced728c7fedf7dfb6da784d7514a023231c8c4e5a3b935cb28411498cf0d6336e7dd4c267570924865b812f651c1f46637ce58c52503a9bcc2b670895639c449622a18e06e2a50b208d0462b4089eaac835782603371152000b344816704d1c7e0b9fcf597e7a7b3ba5fdc9feba515e38a86fd352e437aba518172bbed5dd3d9cc55923df68c2a6fc7457a530f5add86f966a77bdebbd1c5ab19e3dca72ef6d38f1ca993e8333f57fc0d985ebf19371c68cd2de0a02121215da1b008322a682a644588632a6b80b2924cd8d02c151d14c00edac14d4281b8e7346725ce5b8b984b3fabab0bf1e0e262f2fb630dfefc7d48a749b7fda36f7dbda4b677cbb91c7d6f543cca4f4f139c6e6b4df0a4339d3853be6ebfdc2b8d170cdfcbd682cdf46d3b830467c7d952751463f95b263905db818c71983d3180b0c05c5780ed608e482782ec12763ad8d42f820984d347949830603567385d73010f45bc6d49b9619c21c47a2705c03c61ac2051146184922a7dcb1103c6a19152080e9a880b114a89634051685639fcfd86a987fbeb9af158ad3d5e3a0a9eed3caf707a8a2f5c7f2466fcaade1598ce5e7d39eacf1fd436d97fa8ffdf6a4e267b36967f6bcaadf0e2a0fe3746099867362e41952063f1eb2cb56e327830c9715474a311b9200d2c01daa940b5669c8c64a8226473c0e633c8aa8b05a29bc134af988718dc94f87ac51e66ed87e587577f356ed7ac4bbf2b93a795c14fbf78dfca65928cdc55990999bbb7cbe365baedbcbca64b215ad79ba2ff69fafb7bdfb4af477e3dd01649abfaec6e990b1ef4176f13c3e81d49f0cb26493b42a7087362b50afbc900c92768e2b1713184ea4e49a7b468113215dd4689149114fa8050eee0864ac43780e640ef84590150bab1d5b8e9fe0ee852de67d1e3bfd3e84a18acecee1a9fa7818a3fe0a317dd79bc799974551696f45a7b4ad6835e8f46e9adba4a1cfd94172369957ca33bc927c8fb00b2771295fe27b74692e4fa32bbbf756326f9552d6f084b908e383b08a9ba49205a112084d0dc626c26862c90941c1c33bba4053fa075d60a891942725a3234eea88ea14004731c6680d58430a008e4f309d680c04c31f4e842761183e618e6531e810c8652ac62ea28b4dd47dbbfb344d2fd0196d1eab0feba62c2df366d7be1e770bb5dd5959acbedda8f45cd6edc180ee4b543e6ca6ec5ed09766bd56ae9949931df8a4229984a9d3254c9b1fee9317aec611c89804751a6498b4598c3226c904a67fa235d78c582e9124acf998e0d6712645e04942c0d20f1f898abf0ffc4004fc0199cea298f15ef2e8b8e15298602d4f91729e32f10b78312112c3bd61f87812c9390556381f01f02f7f0b19fcc24887d21c831cbb10b2f61cdcd2a4752de6597db12c54eea6133ba8f72bf7cd1954ef2b6fcb9acde5fb1a561e4d1ab5a1efa2c9af97a5ebce50783e48a9789f57a316abd40fda170a32c6ce282b35ff2cc6b2791c47ec92b538421807796a498919c9196054086d494c3cf8149440e05420c814d690d2b99428c567d153a5f00e5921ef082382bc95948a730a91202f949ae44da28147afb0b46438b04581d3ca50ad928f447b95308469746524382173cafedc84d5d78be48a86df77f393e17ebd91153a698d58b1fb7c536da80d5ff50f5d522aa34e77492dfe03d8098031708a13ccf520411a5432cb08c721d007bd8b5293ac7906d46a4715f718f3846752f96059d2dae8f411608080d18b00e3b5fdcba623f9ca54fb55dbe8d77af5f5a8c1f72ff93437cde68b3de20c1f4a189fece4e398ee3babb6d4b0b7b779b3a2777303137aadf94bcabf0d46ff3c187d3f987832ae5fe44ff39bb2138f0defd6b4b05b37627b469f5d79f5343fa0356be6ea3368fdb4fe07fbc8712f5d8abf7d6f8e137f62dd415d562524aead47544954d2182f106aab7c42f705a28d523121ec8ea1c332af88563c7d4bfc5bdd91bd51b082c09b6382b391808a348a60f02d234079e79910828b2c2046aaa91722a2d2264731516209248e130f3981c4c38f965480bf32ed3c4691bbcaed6da17c1dba2bba8c9df17c3ef52d3e6889f6935bdf1e9ab69260ced873d0e4d38221fc7d4d7d5b8be384d1d30813c433ceac954441d61256044b85e429baae8a21242d53861c4b82cba83d5eed51785fbbb5ef08937f102685754c63a6141135c0e2509c319588769a63e5c2920f0a222411c039ac4210371c31cba6783f94953f3761f54d9c99475f9877ab167acdd6d0dcbce8594aede7addede0e9bf5f2810c6a944173ba0c2af31fc04e002c064e65602a0a69c0702d5cf45c7889052c135904044f8c4d241a0c0658ef266f7d54e8e9928117361e058ce89c60397159eb84f607f3e66dbf59e9f66fba1595df3ce6a196afdcef93142d5fa8568e6ee07c0005790f05551f77590a37f3feec69650a2ffb9ddb0d0722de2d9e96b071ed69ad22ebe650ecb4426f3c5decd4e76e491c65889dba590509ef2265ca4b97853009d66322e34e80c444a62563d1a1154accc889220b4e524dd0ccde33440f36ab0cc6391db9e59c87e824c9766c9c46aa9c8e10d15b851729309b70142b64100c4224f89fe0c6a394fd99216a3a94bd327451f0ab6f2bf79dca7026cad5d272381f540ad4958aa1e8f8b6d65b9686ba7c4ef02b0ef6b7d77bbe6e6e6abdfcad30bb627d66179d52d796edfe9ab5f9c15ed52b19703a19f253b7448f6e235cb416c708437339b1c11b503b700d84f4163d0bc58aa34c51176348ce99443297529a450422ea609d1259ed40bf210cd89b0d5ac5104665b32d502703cdf644136a16e5100d4789d2415a82c373e2b3da0693570c808a6835b7341e278ce458f6efff9fb0b2791c5d8bcebc29b77950bd8e7ee93ddd3c6fc26c5defdd6e5e6edd21610609a3671026ff8d0853276a5834cedb28057a5d324118871526d8a059b2c62a6a8444b1b18a88e41db3c078e2688ce69be215ccc1c10e4664f0991146e6bde054a16a31117466b22978fce514d1003dc14b18c5b0252c533a319982c34b8f10c63a807809cc5a17f960e909549d979e7ceaaad1b6f5a877e3a7e7ca5db3aa76bdde52e48b673579f7fdc5f5242df4ec6ebc59dda00e3f8b7d1aed46bdc5605b9a3d944a871bee0211e36720c67f7c93f7b2d5380219bace894d5ecf0222e0d113b17273283c142b39474882a8530c2e882c7071a282a2d44615a20782be76081918066f4d5e9f69a3b2ce62d6d24c4a23b2ad08445930661d3e1c29498c53544e163d86302b28028c210cab00c6e5e74306722ab7755a7c98d45ba1e03bb57e1a8d6e68c772b719f875e5facf5b3c1fcb989ad71f9f641142a5c6afab4fa2b2a483c87793da0af2dd6a73b73f648c2063ec0cc63ead07273e42eca2b5f8d9088b4cd06c4494252f55d6c5e00c32d27864ca59a5bda768b5d640e45110ac14699489698c8f0625ed286184e598cc09f1a38df22f7742c5666fb6fb6d6731daa56e5fd7248cb63b3b9e551bdb9e693e960f4f0d3140493f631741b24f04ecefdaa4f82e5efa44bc92a35805626917854e96e26b318162aec78cae65e4099fcf5ab6c9078de8612eb79c3890e93d5e54bfe16562a2040b468ec1cde1b5d1eb94455e542f2e0380678c382c0310379310388b062d4c044534da2b3996c368266084e7d865d522beeaf660b3865d33b69bb3a721ef357a43d9f1ad817f9eccbd9d9f819794f5c77c5aa5fbbd9bb7b785c5f8a6fa72b75f3c6dc6fdc2cad7d2c1811b9ce2393b08f2bb05e08573f811fbec8267ef9753e032497182f868071a137c325c78bceddc4686c90c3088794583a01468667b0419908446f30d5c40def60f7830583480c3fa4126cc75c4706435219b8e0767a21752a0925116b9f64a65b523b1116b0742943347b40b64b67f20488e921f7d8ae32f437e7ded87cde2a2cddb6259da4d1f9be1aeef57d5f25d5cc9f03092cbd63bf142773ca39b2ae193ce71c0671d14fa903049d88927399890d107ef68088c7a66744a8065a5d154021598ea6324519a10826501944a3401e8a4de11a6257b3bc9211944b43ee97c020341397444ea","a940d9c320af98c512d26a9a10126b58c633e6af8891dfe9e02c83e384418ee81c153f4119394b4ddba8349b6e30d55d368d2bd6ae5e27b8d9377d61d4a00701866767574ed72f61fe6d8a4849f8890a0618803466a54089903209998c53413aee84c14acf8157315ba6a06df08ca0a2314a51f3bee18b1e2818860e41ad006248d6e840418b31eba306ee31bd31a13920519c667d10e44c586750dabc88c4e964d851be08e4805ed6089b2e36cd16e5f358aec2feb9d18fe556b9235bb590d677ed8e1ac4db73dcb1b4f7fbfa75afdb2c38da44a7e8d54c273f9a6c6eb86a8d07adf5a17e5185aa7cba7e09fd63c3d7450b710c2ee02776285ebfb8934e673becd41b99b4d73aca60c11a639104c032db2992f558858d243b7061bf814bd0b70e855786242e9563d26874495436122970ac0d1da7de738f2eeb505e0dc65ea251d3d02891ef10a3e6de1ed96c0491891727392e2f806b06dd55135ee2c356a8a1db8d6e36b3d9ad9a77681cad5be2b13b6b9cd564f5d3d21d9f9bbd99b566e33b356c869abf73cd62afb92989c2e2207b65e7eeced80812fc076bd7650b7194ae53c3d757ba5048acb35c04d417896522759e807e3d7891695522d9c692a398940cf88879ec1b6b1407e18b5b2c112c5a1e4918b9188b59470d9d8f27cbb952dcd3e4580ac0206447ceb2b3b6108d0c5a587c9ffff903274817cbc2176797d135ddcfc62f21dc74683e55aa7c920ff9e57da14faf1f56b492b70f93f5596737182d56564ff73cbee4d5446d2ba3c578d1df895bbddbb759a1583dd42e46199cd1c217ec07f375d9521ce30b2bb333f802ad911eaf740402ecf5534c217986210af50a7931912a04cb39458da298a4f8fbc68446b7fc832f97b5fbc15b2d0d101993d28160964766ad45f57280bfce1cb7afa7b605aa99f69105cdb5048450c271beb0726439d0eff862a77e40f3f43ba3cedb65fcce898a6263f3c8596fd3b897f5fda8d32e71d19c4e1e56b77761e5ae07078d7e4eb265fdfd567e42b4ff05dfc6ec6f877bf5518170f1d4fe4ce9a9bb0086b3e04426401e093586530159db14ad109c4c5699146c006a830b0ecb45ed0164a0f63da587bb0098f7bc4ac87d76e28a314b9862cc61d110b4cb9a278612f4548ada8b828a3eae957358df6a8955b005c18e528a018ee90bdb67e7dc604eff5a07e36ebc1f15fd6c506cecf6506c4ff35b256b1b59ad4ee77ad3bd3fd4414eb3387bba0ed24f0295d3cf28425f47f9b80a15a76e974702814aac1933a4b2cf6ea290911448f4310b5d22a96853d432532b86253b560dda7db35d0e9aa8d784bb5cd9c5d77bfcaf4951ac8557f395fd35fbf6b77f02b27588ddde3e0000"], { 'access-control-allow-headers': 'content-type, authorization',
+      .reply(200, ["1f8b0800000000000203ed9b5b5362c9b685ff8bcfd52772e63d79e3261c0542ae0227ce435e416940b9cb8efeef7b2e6b778bd5580db4754eed886d5444292c5332d7c71863ce4cfe71b55ad8d9d2fad5c37cb6bccafdcf3fae1ec255ee2ad0a49c139293149317d68944954d8c6b2a3d738a2bc998673a48cd0801cf157540258b100c24a5afbe5c05bb8a381225207e21f417223b147244e504f92f42c810af48112f00fc817cb99aaf574febd5d757b0c11fae72f8a0f57ebe9eadb2511a06fafbeeaeb6684f52a96e5b7edb1c4753b2ebf1b03eeece7795050eb8b1bfae7f1ff2ebd76f5f7e1f0ede0d57dfa50117f0341c8cf5e4b65cafb8d44b6c9b7fa69cc5adaff79a6fc3492985d64628a1bf5c3d2ceb0f337c70b558c72f577e6c1f66af63bf7ef7dfb310775739237efbdf2f5771b65a3cc4af337a37919e2df276a9d568ccca2fb2a2f7b56b3d9a55479381acf5ccddb2fff6977ff93a13f87d269fb01ef8c2fc7c961e1653fbaf5bae2837b8d64f71161e66a3ab5cb2bf2e716aeed7b99f8ced728c7fedf7dfb6da784d7514a023231c8c4e5a3b935cb28411498cf0d6336e7dd4c267570924865b812f651c1f46637ce58c52503a9bcc2b670895639c449622a18e06e2a50b208d0462b4089eaac835782603371152000b344816704d1c7e0b9fcf597e7a7b3ba5fdc9feba515e38a86fd352e437aba518172bbed5dd3d9cc55923df68c2a6fc7457a530f5add86f966a77bdebbd1c5ab19e3dca72ef6d38f1ca993e8333f57fc0d985ebf19371c68cd2de0a02121215da1b008322a682a644588632a6b80b2924cd8d02c151d14c00edac14d4281b8e7346725ce5b8b984b3fabab0bf1e0e262f2fb630dfefc7d48a749b7fda36f7dbda4b677cbb91c7d6f543cca4f4f139c6e6b4df0a4339d3853be6ebfdc2b8d170cdfcbd682cdf46d3b830467c7d952751463f95b263905db818c71983d3180b0c05c5780ed608e482782ec12763ad8d42f820984d347949830603567385d73010f45bc6d49b9619c21c47a2705c03c61ac2051146184922a7dcb1103c6a19152080e9a880b114a89634051685639fcfd86a987fbeb9af158ad3d5e3a0a9eed3caf707a8a2f5c7f2466fcaade1598ce5e7d39eacf1fd436d97fa8ffdf6a4e267b36967f6bcaadf0e2a0fe3746099867362e41952063f1eb2cb56e327830c9715474a311b9200d2c01daa940b5669c8c64a8226473c0e633c8aa8b05a29bc134af988718dc94f87ac51e66ed87e587577f356ed7ac4bbf2b93a795c14fbf78dfca65928cdc55990999bbb7cbe365baedbcbca64b215ad79ba2ff69fafb7bdfb4af477e3dd01649abfaec6e990b1ef4176f13c3e81d49f0cb26493b42a7087362b50afbc900c92768e2b1713184ea4e49a7b468113215dd4689149114fa8050eee0864ac43780e640ef84590150bab1d5b8e9fe0ee852de67d1e3bfd3e84a18acecee1a9fa7818a3fe0a317dd79bc799974551696f45a7b4ad6835e8f46e9adba4a1cfd94172369957ca33bc927c8fb00b2771295fe27b74692e4fa32bbbf756326f9552d6f084b908e383b08a9ba49205a112084d0dc626c26862c90941c1c33bba4053fa075d60a891942725a3234eea88ea14004731c6680d58430a008e4f309d680c04c31f4e842761183e618e6531e810c8652ac62ea28b4dd47dbbfb344d2fd0196d1eab0feba62c2df366d7be1e770bb5dd5959acbedda8f45cd6edc180ee4b543e6ca6ec5ed09766bd56ae9949931df8a4229984a9d3254c9b1fee9317aec611c89804751a6498b4598c3226c904a67fa235d78c582e9124acf998e0d6712645e04942c0d20f1f898abf0ffc4004fc0199cea298f15ef2e8b8e15298602d4f91729e32f10b78312112c3bd61f87812c9390556381f01f02f7f0b19fcc24887d21c831cbb10b2f61cdcd2a4752de6597db12c54eea6133ba8f72bf7cd1954ef2b6fcb9acde5fb1a561e4d1ab5a1efa2c9af97a5ebce50783e48a9789f57a316abd40fda170a32c6ce282b35ff2cc6b2791c47ec92b538421807796a498919c9196054086d494c3cf8149440e05420c814d690d2b99428c567d153a5f00e5921ef082382bc95948a730a91202f949ae44da28147afb0b46438b04581d3ca50ad928f447b95308469746524382173cafedc84d5d78be48a86df77f393e17ebd91153a698d58b1fb7c536da80d5ff50f5d522aa34e77492dfe03d8098031708a13ccf520411a5432cb08c721d007bd8b5293ac7906d46a4715f718f3846752f96059d2dae8f411608080d18b00e3b5fdcba623f9ca54fb55dbe8d77af5f5a8c1f72ff93437cde68b3de20c1f4a189fece4e398ee3babb6d4b0b7b779b3a2777303137aadf94bcabf0d46ff3c187d3f987832ae5fe44ff39bb2138f0defd6b4b05b37627b469f5d79f5343fa0356be6ea3368fdb4fe07fbc8712f5d8abf7d6f8e137f62dd415d562524aead47544954d2182f106aab7c42f705a28d523121ec8ea1c332af88563c7d4bfc5bdd91bd51b082c09b6382b391808a348a60f02d234079e79910828b2c2046aaa91722a2d2264731516209248e130f3981c4c38f965480bf32ed3c4691bbcaed6da17c1dba2bba8c9df17c3ef52d3e6889f6935bdf1e9ab69260ced873d0e4d38221fc7d4d7d5b8be384d1d30813c433ceac954441d61256044b85e429baae8a21242d53861c4b82cba83d5eed51785fbbb5ef08937f102685754c63a6141135c0e2509c319588769a63e5c2920f0a222411c039ac4210371c31cba6783f94953f3761f54d9c99475f9877ab167acdd6d0dcbce8594aede7addede0e9bf5f2810c6a944173ba0c2af31fc04e002c064e65602a0a69c0702d5cf45c7889052c135904044f8c4d241a0c0658ef266f7d54e8e9928117361e058ce89c60397159eb84f607f3e66dbf59e9f66fba1595df3ce6a196afdcef93142d5fa8568e6ee07c0005790f05551f77590a37f3feec69650a2ffb9ddb0d0722de2d9e96b071ed69ad22ebe650ecb4426f3c5decd4e76e491c65889dba590509ef2265ca4b97853009d66322e34e80c444a62563d1a1154accc889220b4e524dd0ccde33440f36ab0cc6391db9e59c87e824c9766c9c46aa9c8e10d15b851729309b70142b64100c4224f89fe0c6a394fd99216a3a94bd327451f0ab6f2bf79dca7026cad5d272381f540ad4958aa1e8f8b6d65b9686ba7c4ef02b0ef6b7d77bbe6e6e6abdfcad30bb627d66179d52d796edfe9ab5f9c15ed52b19703a19f253b7448f6e235cb416c708437339b1c11b503b700d84f4163d0bc58aa34c51176348ce99443297529a450422ea609d1259ed40bf210cd89b0d5ac5104665b32d502703cdf644136a16e5100d4789d2415a82c373e2b3da0693570c808a6835b7341e278ce458f6efff9fb0b2791c5d8bcebc29b77950bd8e7ee93ddd3c6fc26c5defdd6e5e6edd21610609a3671026ff8d0853276a5834cedb28057a5d324118871526d8a059b2c62a6a8444b1b18a88e41db3c078e2688ce69be215ccc1c10e4664f0991146e6bde054a16a31117466b22978fce514d1003dc14b18c5b0252c533a319982c34b8f10c63a807809cc5a17f960e909549d979e7ceaaad1b6f5a877e3a7e7ca5db3aa76bdde52e48b673579f7fdc5f5242df4ec6ebc59dda00e3f8b7d1aed46bdc5605b9a3d944a871bee0211e36720c67f7c93f7b2d5380219bace894d5ecf0222e0d113b17273283c142b39474882a8530c2e882c7071a282a2d44615a20782be76081918066f4d5e9f69a3b2ce62d6d24c4a23b2ad08445930661d3e1c29498c53544e163d86302b28028c210cab00c6e5e74306722ab7755a7c98d45ba1e03bb57e1a8d6e68c772b719f875e5facf5b3c1fcb989ad71f9f641142a5c6afab4fa2b2a483c87793da0af2dd6a73b73f648c2063ec0cc63ead07273e42eca2b5f8d9088b4cd06c4494252f55d6c5e00c32d27864ca59a5bda768b5d640e45110ac14699489698c8f0625ed286184e598cc09f1a38df22f7742c5666fb6fb6d6731daa56e5fd7248cb63b3b9e551bdb9e693e960f4f0d3140493f631741b24f04ecefdaa4f82e5efa44bc92a35805626917854e96e26b318162aec78cae65e4099fcf5ab6c9078de8612eb79c3890e93d5e54bfe16562a2040b468ec1cde1b5d1eb94455e542f2e0380678c382c0310379310388b062d4c044534da2b3996c368266084e7d865d522beeaf660b3865d33b69bb3a721ef357a43d9f1ad817f9eccbd9d9f819794f5c77c5aa5fbbd9bb7b785c5f8a6fa72b75f3c6dc6fdc2cad7d2c1811b9ce2393b08f2bb05e08573f811fbec8267ef9753e032497182f868071a137c325c78bceddc4686c90c3088794583a01468667b0419908446f30d5c40def60f7830583480c3fa4126cc75c4706435219b8e0767a21752a0925116b9f64a65b523b1116b0742943347b40b64b67f20488e921f7d8ae32f437e7ded87cde2a2cddb6259da4d1f9be1aeef57d5f25d5cc9f03092cbd63bf142773ca39b2ae193ce71c0671d14fa903049d88927399890d107ef68088c7a66744a8065a5d154021598ea6324519a10826501944a3401e8a4de11a6257b3bc9211944b43ee97c020341397444ea","a940d9c320af98c512d26a9a10126b58c633e6af8891dfe9e02c83e384418ee81c153f4119394b4ddba8349b6e30d55d368d2bd6ae5e27b8d9377d61d4a00701866767574ed72f61fe6d8a4849f8890a0618803466a54089903209998c53413aee84c14acf8157315ba6a06df08ca0a2314a51f3bee18b1e2818860e41ad006248d6e840418b31eba306ee31bd31a13920519c667d10e44c586750dabc88c4e964d851be08e4805ed6089b2e36cd16e5f358aec2feb9d18fe556b9235bb590d677ed8e1ac4db73dcb1b4f7fbfa75afdb2c38da44a7e8d54c273f9a6c6eb86a8d07adf5a17e5185aa7cba7e09fd63c3d7450b710c2ee02776285ebfb8934e673becd41b99b4d73aca60c11a639104c032db2992f558858d243b7061bf814bd0b70e855786242e9563d26874495436122970ac0d1da7de738f2eeb505e0dc65ea251d3d02891ef10a3e6de1ed96c0491891727392e2f806b06dd55135ee2c356a8a1db8d6e36b3d9ad9a77681cad5be2b13b6b9cd564f5d3d21d9f9bbd99b566e33b356c869abf73cd62afb92989c2e2207b65e7eeced80812fc076bd7650b7194ae53c3d757ba5048acb35c04d417896522759e807e3d7891695522d9c692a398940cf88879ec1b6b1407e18b5b2c112c5a1e4918b9188b59470d9d8f27cbb952dcd3e4580ac0206447ceb2b3b6108d0c5a587c9ffff903274817cbc2176797d135ddcfc62f21dc74683e55aa7c920ff9e57da14faf1f56b492b70f93f5596737182d56564ff73cbee4d5446d2ba3c578d1df895bbddbb759a1583dd42e46199cd1c217ec07f375d9521ce30b2bb333f802ad911eaf740402ecf5534c217986210af50a7931912a04cb39458da298a4f8fbc68446b7fc832f97b5fbc15b2d0d101993d28160964766ad45f57280bfce1cb7afa7b605aa99f69105cdb5048450c271beb0726439d0eff862a77e40f3f43ba3cedb65fcce898a6263f3c8596fd3b897f5fda8d32e71d19c4e1e56b77761e5ae07078d7e4eb265fdfd567e42b4ff05dfc6ec6f877bf5518170f1d4fe4ce9a9bb0086b3e04426401e093586530159db14ad109c4c5699146c006a830b0ecb45ed0164a0f63da587bb0098f7bc4ac87d76e28a314b9862cc61d110b4cb9a278612f4548ada8b828a3eae957358df6a8955b005c18e528a018ee90bdb67e7dc604eff5a07e36ebc1f15fd6c506cecf6506c4ff35b256b1b59ad4ee77ad3bd3fd4414eb3387bba0ed24f0295d3cf28425f47f9b80a15a76e974702814aac1933a4b2cf6ea290911448f4310b5d22a96853d432532b86253b560dda7db35d0e9aa8d784bb5cd9c5d77bfcaf4951ac8557f395fd35fbf6b77f02b27588ddde3e0000"], {
+        'access-control-allow-headers': 'content-type, authorization',
         'content-encoding': 'gzip',
         'content-type': 'application/json; charset=utf-8',
         vary: 'Accept-Encoding',
@@ -809,7 +837,8 @@ describe('BitGoD', function() {
 
       nock('https://test.bitgo.com:443')
       .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/c1cdd3653d6e7e2ce43e88d3a44f95d550f1fa800c25139d60125c668e563dfe')
-      .reply(200, ["1f8b0800000000000203ad935d6f5b370c86ffcbb976078a22f5e1bb65dd52aceb902d03ba66d8052591b69bc44efdd1b428f2dfcbd3a4e8b6eb090738c712f9f8e52bf2d3b419d372eaa18f1113c791342b76a5a8a58c284456793083059302d09143ac234140ee2915e51487e9b498861cd54908819f013e0be58f004baacb80df01c09547987a8033e6b59876a7e3dde97898967f7d9adefb8f69e99bd2fbeeb43dce9c5f319c1df9eaed6f2bd6d73fff727e5aaddee073bb7ef1f1c3fae2a5c8eacc91efe5e6e4d0101fb10f8bafacf06fd6f3f2e77e75f9eafc777c798b173b79d77fbabcbb5cf39bfa63effbfdfdc76fac92f051e0e6f06ab3f58de3fea40f7f2f26dd1ef71b7d14fc3fe8fc27e28ccff1ededbbcbc3fd75fe81305f6d5e9cee4fdf1fc3f9c5815febb97c433cc3f0c470497db7b5cdfe568e9bddd685312fa63bdd8ecd76352d4d6e0eba98d6fac1ff02c2a3ed10940d861204a38a896ae2aedca3dfbc24ff6e201c39110ff0f39c598d2bc614a40a6473023e826cd898df9423100122a408a59b884554cb586a684e4bc295aa7932a79c7aadd625b2590ec34f2b71699453c25c6646464fa6e2611462eb8503428d7daeb92669adfb2601341b1db2e4d6cc0b08aa06da0c9b42a0e27ad8595e71cf025e531709d65a224bd56a217f2008d030938421c6a1ae331946514ba8c18b0b23bb51b3a2d8874a6c5c214a66502de0568dd0ba4b0f146370114544d83468ac0c236a9792731d82e28a7aaa3cebf1c8514c42072f66be07746b34923b6e86094d0d59213214322ea571034c3088b516df485f182e2d153463d511038dd854a80f40f755b955a8d547971ab8b2227de40ed84c69845c03aa33104b278b5c889a7673eba56a6f25d55247e48183dd3b1065e69c912aa12322d76e3ef77ea93c1bf5b400092a8ea7aef8d262596a208f0ca53745d261b517f40eb268dd4df6b3d806958cadb94f0a25fba5fd277f48d0c25843d53cdcc9ea6d386a16b7888d8ae4d8dc5af1fcaf793e23ed66d7afd77258cf2dffb48c53e7114d737656556c442a7e30c0bb30a91b5a804af3aba328a3e464dc460ad33c3b9bd5da27346224e087cf008362ad2c050000","ca81eebe6173470f1de992d03ec508831fb18f61741902af38ba68c5ff2e8c98b60efc0a1a1a174ac8681d0a145296f74658aa7580c6c6bc94d231cba203231370ad0347635271e13e1fa34a19533d69d05def3674cbacb65c372bc97c35af2d211acc4ad5f607306a573a7b49ae7d6b36eab93ca95566a49c26f561b956eda5799a8c66271849d8304c3f86d1a5c5febfb9113433637c3410249587e60691dc49e49080bb117ccf95863e169c6522c20e43b783c845c0c020d62b1cd4198c548f90229745842fc1e836c7fd34d9a941e5b1a2e46eb18ef96d9ac4f0385d97568fe5eb5eef7957f1db6e745bab540ea5dd6cdbffb61d37f3a69db2e6ec6e559fddbb6d9efaf40423adc499d8ff4956847f6245972df71c4392bf8fa1a717d186588e8e515762ab05a45d29148623955c04c31d555c496a0872562049b543af1842ec0f8662f04807c28d501180e35138c1503010a91503a8744026586abc01c362e48898951e3294351c823e3bcb10d645c28ae8e5b8a735219f3bede18f0d7be5da7e3c1d6c862c5f4c784c461b7cb79b8def1296dff4b6ed16bf7e56266f289353e5f9375ce9dd89a660b359cfef4bbc1fb1ba1f6d5c65361698c1437c52b2d05aa36332fd1c36e9597b9b4f87244fd29693cdb0bd0b497bfed8e72dbd9f2662bd29756f86fe84ee9f04ff8b57f51a6e8dc9fbe0669146ecad608663267c448ed8688817d8c274e709c6d86b167c90ca092a1c974c6378025ec24d857c8e6b607fcc0bc48313484786ccf11f0b05a98c6bb05d2ddd1167182c60ce50f0f39e6304f1df69cca2b7f4a7702380fb923efb9173797b7abca19b5abddfa5a277e8de34e6ccd27abf31ac56fb83ebe63ecdf3eda93f424ca5e89f4b6be4bc455eb6e0b310bdb3cb621c893afe45a090331e080a8e78e51872de69ab88e416a9a03ce790d11d78928a31e2a7a37e01d17397853c068321963079462610f8ab877de430450285d2100e64226a348b0089935887c024a6c7706ca97beadf672052450610891710c10e48f9b916493e6291f3c9244d3acb75a79c947a9d45354fbc6bcc77f5b5cefc7dda5c0e4fc6484829b079f493f821e72de8827a5e79d8065a5532bbe9b5bea9c3a862b269dd37d24df3710d5c8dafe9f40461fa97f8b1f7e107add11a8a0d65cc19f033c7b4571a68210e51c15934ce181b20e7bbe8558846702208fa9387f1e75981dac021e2f9a0c0111d8cef5140f3c5282012e19d1a2bb8c25c05860d487a6db48f029a33779246f67efc28e64cbfed61ab764c5a713315a65ddf55a89e75ef7832da2f1ffdf5a1b31accc3e99f4a8ad29ffad7473a3d39f6977f2ae0fda1fe8a9e4b567a72fb21e9cf74b7563e6caaa95e09b9da841b9dc755b26f87bd20a27c021fa47ecd18d7973f005ffefe1380cf3f85f376ab5a6d35b3dbd2808d5a215bf553711836e6ade5bcd4ae6575f1b6c4ae520bd36ea058d1fa38bb49134ef975af761b9687b83c7437bd7312ff8ee710aa5867263de24b8e053dad080388d932335f61c214df7f05a50201f94b190000"], { 'access-control-allow-headers': 'content-type, authorization',
+      .reply(200, ["1f8b0800000000000203ad935d6f5b370c86ffcbb976078a22f5e1bb65dd52aceb902d03ba66d8052591b69bc44efdd1b428f2dfcbd3a4e8b6eb090738c712f9f8e52bf2d3b419d372eaa18f1113c791342b76a5a8a58c284456793083059302d09143ac234140ee2915e51487e9b498861cd54908819f013e0be58f004baacb80df01c09547987a8033e6b59876a7e3dde97898967f7d9adefb8f69e99bd2fbeeb43dce9c5f319c1df9eaed6f2bd6d73fff727e5aaddee073bb7ef1f1c3fae2a5c8eacc91efe5e6e4d0101fb10f8bafacf06fd6f3f2e77e75f9eafc777c798b173b79d77fbabcbb5cf39bfa63effbfdfdc76fac92f051e0e6f06ab3f58de3fea40f7f2f26dd1ef71b7d14fc3fe8fc27e28ccff1ededbbcbc3fd75fe81305f6d5e9cee4fdf1fc3f9c5815febb97c433cc3f0c470497db7b5cdfe568e9bddd685312fa63bdd8ecd76352d4d6e0eba98d6fac1ff02c2a3ed10940d861204a38a896ae2aedca3dfbc24ff6e201c39110ff0f39c598d2bc614a40a6473023e826cd898df9423100122a408a59b884554cb586a684e4bc295aa7932a79c7aadd625b2590ec34f2b71699453c25c6646464fa6e2611462eb8503428d7daeb92669adfb2601341b1db2e4d6cc0b08aa06da0c9b42a0e27ad8595e71cf025e531709d65a224bd56a217f2008d030938421c6a1ae331946514ba8c18b0b23bb51b3a2d8874a6c5c214a66502de0568dd0ba4b0f146370114544d83468ac0c236a9792731d82e28a7aaa3cebf1c8514c42072f66be07746b34923b6e86094d0d59213214322ea571034c3088b516df485f182e2d153463d511038dd854a80f40f755b955a8d547971ab8b2227de40ed84c69845c03aa33104b278b5c889a7673eba56a6f25d55247e48183dd3b1065e69c912aa12322d76e3ef77ea93c1bf5b400092a8ea7aef8d262596a208f0ca53745d261b517f40eb268dd4df6b3d806958cadb94f0a25fba5fd277f48d0c25843d53cdcc9ea6d386a16b7888d8ae4d8dc5af1fcaf793e23ed66d7afd77258cf2dffb48c53e7114d737656556c442a7e30c0bb30a91b5a804af3aba328a3e464dc460ad33c3b9bd5da27346224e087cf008362ad2c050000","ca81eebe6173470f1de992d03ec508831fb18f61741902af38ba68c5ff2e8c98b60efc0a1a1a174ac8681d0a145296f74658aa7580c6c6bc94d231cba203231370ad0347635271e13e1fa34a19533d69d05def3674cbacb65c372bc97c35af2d211acc4ad5f607306a573a7b49ae7d6b36eab93ca95566a49c26f561b956eda5799a8c66271849d8304c3f86d1a5c5febfb9113433637c3410249587e60691dc49e49080bb117ccf95863e169c6522c20e43b783c845c0c020d62b1cd4198c548f90229745842fc1e836c7fd34d9a941e5b1a2e46eb18ef96d9ac4f0385d97568fe5eb5eef7957f1db6e745bab540ea5dd6cdbffb61d37f3a69db2e6ec6e559fddbb6d9efaf40423adc499d8ff4956847f6245972df71c4392bf8fa1a717d186588e8e515762ab05a45d29148623955c04c31d555c496a0872562049b543af1842ec0f8662f04807c28d501180e35138c1503010a91503a8744026586abc01c362e48898951e3294351c823e3bcb10d645c28ae8e5b8a735219f3bede18f0d7be5da7e3c1d6c862c5f4c784c461b7cb79b8def1296dff4b6ed16bf7e56266f289353e5f9375ce9dd89a660b359cfef4bbc1fb1ba1f6d5c65361698c1437c52b2d05aa36332fd1c36e9597b9b4f87244fd29693cdb0bd0b497bfed8e72dbd9f2662bd29756f86fe84ee9f04ff8b57f51a6e8dc9fbe0669146ecad608663267c448ed8688817d8c274e709c6d86b167c90ca092a1c974c6378025ec24d857c8e6b607fcc0bc48313484786ccf11f0b05a98c6bb05d2ddd1167182c60ce50f0f39e6304f1df69cca2b7f4a7702380fb923efb9173797b7abca19b5abddfa5a277e8de34e6ccd27abf31ac56fb83ebe63ecdf3eda93f424ca5e89f4b6be4bc455eb6e0b310bdb3cb621c893afe45a090331e080a8e78e51872de69ab88e416a9a03ce790d11d78928a31e2a7a37e01d17397853c068321963079462610f8ab877de430450285d2100e64226a348b0089935887c024a6c7706ca97beadf672052450610891710c10e48f9b916493e6291f3c9244d3acb75a79c947a9d45354fbc6bcc77f5b5cefc7dda5c0e4fc6484829b079f493f821e72de8827a5e79d8065a5532bbe9b5bea9c3a862b269dd37d24df3710d5c8dafe9f40461fa97f8b1f7e107add11a8a0d65cc19f033c7b4571a68210e51c15934ce181b20e7bbe8558846702208fa9387f1e75981dac021e2f9a0c0111d8cef5140f3c5282012e19d1a2bb8c25c05860d487a6db48f029a33779246f67efc28e64cbfed61ab764c5a713315a65ddf55a89e75ef7832da2f1ffdf5a1b31accc3e99f4a8ad29ffad7473a3d39f6977f2ae0fda1fe8a9e4b567a72fb21e9cf74b7563e6caaa95e09b9da841b9dc755b26f87bd20a27c021fa47ecd18d7973f005ffefe1380cf3f85f376ab5a6d35b3dbd2808d5a215bf553711836e6ade5bcd4ae6575f1b6c4ae520bd36ea058d1fa38bb49134ef975af761b9687b83c7437bd7312ff8ee710aa5867263de24b8e053dad080388d932335f61c214df7f05a50201f94b190000"], {
+        'access-control-allow-headers': 'content-type, authorization',
         'content-encoding': 'gzip',
         'content-type': 'application/json; charset=utf-8',
         vary: 'Accept-Encoding',
@@ -817,7 +846,8 @@ describe('BitGoD', function() {
 
       nock('https://test.bitgo.com:443')
       .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/a4dfeae89864f26a7e61c843aadf48c6d64b0758c16d0ba7b8823026ddbf0883')
-      .reply(200, ["1f8b0800000000000203ad9551735c350c85ffcb3ea78c2d5bb694370a4c18289d76606829c3836d49c9a66d529add964ea7ff9d7309292dafe087ddbd77af8f8fa44fbaef777bdb9dee46b5f0e1a2d26a501bdd5b5e52cb18165556b35667ea2c2b374b73f429422551339b9144caee6467e3e050a294f95ea27b597ecae9b4ea69a62f524acff044381ec8695b27bbebe3e1d5f170b33bfdf5fdee0d2e76a7b839d6ba3e5e1d36998794ef1ff8d9e5e373f627df3d383b9e9fff425fc7f36fdffd71f1e8fb31ceef43f1cd7871dc348bfea5fae1e44e2b7faef5558fa7af84b2d39bb3cba7f1cb7eee1f5cf1cf67cfeddd78fb60d1fc44abd2bfb4e873ad72f9c61f55fef232f72797df1c5f3ebd79f6ee41e787263ffe7ebe1e3f7cfc8f562ba9dd46bbbff9617f853b87d747fff0dbc9ceaf0eaff77e1bfdff10f4ff10eba712f7f98c2e5ffefee3cddbe7fdab4afdd9fedbe3dbe397877cf6e8869ff8d9f847e21ec9df1a886a5d5fc5fef5cb71d85f5f2136e693dd2bbfb2fdd5f9ee34c68b1b3fd95df81f3822dd529012c5e0aca3c7d0d0a2b9984775579a1422968af4a16c75b6a853868d146bb29bafd57bf591ee5658d8f65da5a4ca89289152664d9ead4b9a46412baf411cde1cd84eab4d871b4b445ab4f1dca87bf215736a3581065c8626ebab8d284ba6f6a999e758e28bda6c9d92d5e125d01945cc9acc28a5ae9e4c596b923653ae1d8eeae6a82dd5952d7af1cedc666dad7131e3661597793bca79a9e9f43a44a75a0d1ba1bd2a4bde1c25b6d573567332acd61ca9ccd6c21165519f2bbada82bbdc58bb08e7a80dcf2bf952f1cdcf6aca5b6c14daa298c81ab5484e80158588205735d42331c1daa0b67a19492b95be9891fdd509c3c2daa6a1d8a8388d99b291b551eb684cade49274722e2d5834da6ac498155a3d46711bde2bfca328387726c1e429255611fc39c956827fa4b2694e18353574a020b38eaeb820032c9eb5b3a27638ba0c8fbbf55f79ca1f798abf785254afddb2b05a88337473f02cc9a5a18659a8f7c095a366a9018ed14b4124699074e5b06a63cdde4afd4814714f7dc03a26a9566822596088ba29f6955238a7ea35a210e709e05087e53cb850302af891f1c2211de4f74c0821fa44525521e733d660499a2660c5f39417c4cc1b52d639418f96ac5b47c8de6c59f24acc52aba43459cbe8a02b2fa0a223902b422d80baa152ad0ded09e1810699eb53a6943bb04470d1051dd63296d4ce9d4d6b080a99a4644e188d1ba7300f5fbde429bda319f3a6918016720aeaeb421e6666e1155e5a05a0033fa55aee358fac782dc580aee4895c46c9191db169486938242a6b6bab4ee0271d6fac49c5b8d2445c15c9c4ff81a324302872998e0e402f8c8a847fc2542ae83244f371d8a40c8a32b0406c6b3a55b7d085990bea403141a1016bab3813bea4af341600fed7fee5b1f91a038e7c6b63ae730c1a54f2c044f1d19cc27006e64c91858fcff7236d687b97b15a6f35013a4f9b0fef68e195e17f95ac984cfd6e1fe6f67c71bd9e5f8c9b8b6d0cdf0d4fe0c056c27bcfeaea34ebed6cb5843a8202c3f0a932bd28b263d2d1d4d35ade6df37c7f7e81b74621f0cd1ffe04fcd737d04f080000","ca81eebe6173470f1de992d03ec508831fb18f61741902af38ba68c5ff2e8c98b60efc0a1a1a174ac8681d0a145296f74658aa7580c6c6bc94d231cba203231370ad0347635271e13e1fa34a19533d69d05def3674cbacb65c372bc97c35af2d211acc4ad5f607306a573a7b49ae7d6b36eab93ca95566a49c26f561b956eda5799a8c66271849d8304c3f86d1a5c5febfb9113433637c3410249587e60691dc49e49080bb117ccf95863e169c6522c20e43b783c845c0c020d62b1cd4198c548f90229745842fc1e836c7fd34d9a941e5b1a2e46eb18ef96d9ac4f0385d97568fe5eb5eef7957f1db6e745bab540ea5dd6cdbffb61d37f3a69db2e6ec6e559fddbb6d9efaf40423adc499d8ff4956847f6245972df71c4392bf8fa1a717d186588e8e515762ab05a45d29148623955c04c31d555c496a0872562049b543af1842ec0f8662f04807c28d501180e35138c1503010a91503a8744026586abc01c362e48898951e3294351c823e3bcb10d645c28ae8e5b8a735219f3bede18f0d7be5da7e3c1d6c862c5f4c784c461b7cb79b8def1296dff4b6ed16bf7e56266f289353e5f9375ce9dd89a660b359cfef4bbc1fb1ba1f6d5c65361698c1437c52b2d05aa36332fd1c36e9597b9b4f87244fd29693cdb0bd0b497bfed8e72dbd9f2662bd29756f86fe84ee9f04ff8b57f51a6e8dc9fbe0669146ecad608663267c448ed8688817d8c274e709c6d86b167c90ca092a1c974c6378025ec24d857c8e6b607fcc0bc48313484786ccf11f0b05a98c6bb05d2ddd1167182c60ce50f0f39e6304f1df69cca2b7f4a7702380fb923efb9173797b7abca19b5abddfa5a277e8de34e6ccd27abf31ac56fb83ebe63ecdf3eda93f424ca5e89f4b6be4bc455eb6e0b310bdb3cb621c893afe45a090331e080a8e78e51872de69ab88e416a9a03ce790d11d78928a31e2a7a37e01d17397853c068321963079462610f8ab877de430450285d2100e64226a348b0089935887c024a6c7706ca97beadf672052450610891710c10e48f9b916493e6291f3c9244d3acb75a79c947a9d45354fbc6bcc77f5b5cefc7dda5c0e4fc6484829b079f493f821e72de8827a5e79d8065a5532bbe9b5bea9c3a862b269dd37d24df3710d5c8dafe9f40461fa97f8b1f7e107add11a8a0d65cc19f033c7b4571a68210e51c15934ce181b20e7bbe8558846702208fa9387f1e75981dac021e2f9a0c0111d8cef5140f3c5282012e19d1a2bb8c25c05860d487a6db48f029a33779246f67efc28e64cbfed61ab764c5a713315a65ddf55a89e75ef7832da2f1ffdf5a1b31accc3e99f4a8ad29ffad7473a3d39f6977f2ae0fda1fe8a9e4b567a72fb21e9cf74b7563e6caaa95e09b9da841b9dc755b26f87bd20a27c021fa47ecd18d7973f005ffefe1380cf3f85f376ab5a6d35b3dbd2808d5a215bf553711836e6ade5bcd4ae6575f1b6c4ae520bd36ea058d1fa38bb49134ef975af761b9687b83c7437bd7312ff8ee710aa5867263de24b8e053dad080388d932335f61c214df7f05a50201f94b190000"], { 'access-control-allow-headers': 'content-type, authorization',
+      .reply(200, ["1f8b0800000000000203ad9551735c350c85ffcb3ea78c2d5bb694370a4c18289d76606829c3836d49c9a66d529add964ea7ff9d7309292dafe087ddbd77af8f8fa44fbaef777bdb9dee46b5f0e1a2d26a501bdd5b5e52cb18165556b35667ea2c2b374b73f429422551339b9144caee6467e3e050a294f95ea27b597ecae9b4ea69a62f524acff044381ec8695b27bbebe3e1d5f170b33bfdf5fdee0d2e76a7b839d6ba3e5e1d36998794ef1ff8d9e5e373f627df3d383b9e9fff425fc7f36fdffd71f1e8fb31ceef43f1cd7871dc348bfea5fae1e44e2b7faef5558fa7af84b2d39bb3cba7f1cb7eee1f5cf1cf67cfeddd78fb60d1fc44abd2bfb4e873ad72f9c61f55fef232f72797df1c5f3ebd79f6ee41e787263ffe7ebe1e3f7cfc8f562ba9dd46bbbff9617f853b87d747fff0dbc9ceaf0eaff77e1bfdff10f4ff10eba712f7f98c2e5ffefee3cddbe7fdab4afdd9fedbe3dbe397877cf6e8869ff8d9f847e21ec9df1a886a5d5fc5fef5cb71d85f5f2136e693dd2bbfb2fdd5f9ee34c68b1b3fd95df81f3822dd529012c5e0aca3c7d0d0a2b9984775579a1422968af4a16c75b6a853868d146bb29bafd57bf591ee5658d8f65da5a4ca89289152664d9ead4b9a46412baf411cde1cd84eab4d871b4b445ab4f1dca87bf215736a3581065c8626ebab8d284ba6f6a999e758e28bda6c9d92d5e125d01945cc9acc28a5ae9e4c596b923653ae1d8eeae6a82dd5952d7af1cedc666dad7131e3661597793bca79a9e9f43a44a75a0d1ba1bd2a4bde1c25b6d573567332acd61ca9ccd6c21165519f2bbada82bbdc58bb08e7a80dcf2bf952f1cdcf6aca5b6c14daa298c81ab5484e80158588205735d42331c1daa0b67a19492b95be9891fdd509c3c2daa6a1d8a8388d99b291b551eb684cade49274722e2d5834da6ac498155a3d46711bde2bfca328387726c1e429255611fc39c956827fa4b2694e18353574a020b38eaeb820032c9eb5b3a27638ba0c8fbbf55f79ca1f798abf785254afddb2b05a88337473f02cc9a5a18659a8f7c095a366a9018ed14b4124699074e5b06a63cdde4afd4814714f7dc03a26a9566822596088ba29f6955238a7ea35a210e709e05087e53cb850302af891f1c2211de4f74c0821fa44525521e733d660499a2660c5f39417c4cc1b52d639418f96ac5b47c8de6c59f24acc52aba43459cbe8a02b2fa0a223902b422d80baa152ad0ded09e1810699eb53a6943bb04470d1051dd63296d4ce9d4d6b080a99a4644e188d1ba7300f5fbde429bda319f3a6918016720aeaeb421e6666e1155e5a05a0033fa55aee358fac782dc580aee4895c46c9191db169486938242a6b6bab4ee0271d6fac49c5b8d2445c15c9c4ff81a324302872998e0e402f8c8a847fc2542ae83244f371d8a40c8a32b0406c6b3a55b7d085990bea403141a1016bab3813bea4af341600fed7fee5b1f91a038e7c6b63ae730c1a54f2c044f1d19cc27006e64c91858fcff7236d687b97b15a6f35013a4f9b0fef68e195e17f95ac984cfd6e1fe6f67c71bd9e5f8c9b8b6d0cdf0d4fe0c056c27bcfeaea34ebed6cb5843a8202c3f0a932bd28b263d2d1d4d35ade6df37c7f7e81b74621f0cd1ffe04fcd737d04f080000","ca81eebe6173470f1de992d03ec508831fb18f61741902af38ba68c5ff2e8c98b60efc0a1a1a174ac8681d0a145296f74658aa7580c6c6bc94d231cba203231370ad0347635271e13e1fa34a19533d69d05def3674cbacb65c372bc97c35af2d211acc4ad5f607306a573a7b49ae7d6b36eab93ca95566a49c26f561b956eda5799a8c66271849d8304c3f86d1a5c5febfb9113433637c3410249587e60691dc49e49080bb117ccf95863e169c6522c20e43b783c845c0c020d62b1cd4198c548f90229745842fc1e836c7fd34d9a941e5b1a2e46eb18ef96d9ac4f0385d97568fe5eb5eef7957f1db6e745bab540ea5dd6cdbffb61d37f3a69db2e6ec6e559fddbb6d9efaf40423adc499d8ff4956847f6245972df71c4392bf8fa1a717d186588e8e515762ab05a45d29148623955c04c31d555c496a0872562049b543af1842ec0f8662f04807c28d501180e35138c1503010a91503a8744026586abc01c362e48898951e3294351c823e3bcb10d645c28ae8e5b8a735219f3bede18f0d7be5da7e3c1d6c862c5f4c784c461b7cb79b8def1296dff4b6ed16bf7e56266f289353e5f9375ce9dd89a660b359cfef4bbc1fb1ba1f6d5c65361698c1437c52b2d05aa36332fd1c36e9597b9b4f87244fd29693cdb0bd0b497bfed8e72dbd9f2662bd29756f86fe84ee9f04ff8b57f51a6e8dc9fbe0669146ecad608663267c448ed8688817d8c274e709c6d86b167c90ca092a1c974c6378025ec24d857c8e6b607fcc0bc48313484786ccf11f0b05a98c6bb05d2ddd1167182c60ce50f0f39e6304f1df69cca2b7f4a7702380fb923efb9173797b7abca19b5abddfa5a277e8de34e6ccd27abf31ac56fb83ebe63ecdf3eda93f424ca5e89f4b6be4bc455eb6e0b310bdb3cb621c893afe45a090331e080a8e78e51872de69ab88e416a9a03ce790d11d78928a31e2a7a37e01d17397853c068321963079462610f8ab877de430450285d2100e64226a348b0089935887c024a6c7706ca97beadf672052450610891710c10e48f9b916493e6291f3c9244d3acb75a79c947a9d45354fbc6bcc77f5b5cefc7dda5c0e4fc6484829b079f493f821e72de8827a5e79d8065a5532bbe9b5bea9c3a862b269dd37d24df3710d5c8dafe9f40461fa97f8b1f7e107add11a8a0d65cc19f033c7b4571a68210e51c15934ce181b20e7bbe8558846702208fa9387f1e75981dac021e2f9a0c0111d8cef5140f3c5282012e19d1a2bb8c25c05860d487a6db48f029a33779246f67efc28e64cbfed61ab764c5a713315a65ddf55a89e75ef7832da2f1ffdf5a1b31accc3e99f4a8ad29ffad7473a3d39f6977f2ae0fda1fe8a9e4b567a72fb21e9cf74b7563e6caaa95e09b9da841b9dc755b26f87bd20a27c021fa47ecd18d7973f005ffefe1380cf3f85f376ab5a6d35b3dbd2808d5a215bf553711836e6ade5bcd4ae6575f1b6c4ae520bd36ea058d1fa38bb49134ef975af761b9687b83c7437bd7312ff8ee710aa5867263de24b8e053dad080388d932335f61c214df7f05a50201f94b190000"], {
+        'access-control-allow-headers': 'content-type, authorization',
         'content-encoding': 'gzip',
         'content-type': 'application/json; charset=utf-8',
         vary: 'Accept-Encoding',
@@ -863,6 +893,19 @@ describe('BitGoD', function() {
         result.amount.should.eql(100000000000);
         result.confirmations.should.eql(300032);
         result.instant.should.eql(true);
+      });
+    });
+
+    it('decrypt travel info', function() {
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/31e0e7d688346c8c86fe16dd5b7f1e7860fbbcc81bb23cc62100f2bf72b201e0')
+        .reply(200, ["1f8b0800000000000203dd99595754491685ff4bbe6ab5310fae550f320816a04c0e45db0f31422a2698992052abfe7b7f91d4805657afaeee7e1297e6c0bd2722ced967ef7dae3f4da675f278a26513cd57178236ae84125c6fd2d56ab3efb2f9e044cfb994207356ba14a7a4105de5ee5556827b270f27b38bf987743ebd6d753b2dce88997a77be3591420e299b9a7d90ce575b6d93bae8d4b46d2daa128d32ba641185125e68967785252d316b5a3622b184fb4ed8efa43816e2b1118f85ff5bf4fa842b7ae3821009fd70329d5d5e2d1793c77fff6972396fd7d38babc52f5bd1212b93734ac2e518ba084ad9ac430f512ba1b48e55a52c832dcda810532c2d34159dd135a9585261a15f23beb85ab2cab3596d3793c7e2e7877f58cb882e94b325d9e6b3cfdadb568326a673b9b20d557d08c23a99241bb21c98b592682e895cc8d89fad25ffc55ab158539b6fb693bd244ab6898fbd6452e8a332b5c4125dd4adba929b15c9dbae7a64ad9a4593f1afac95a234de507925d965a94618a97b32a2f8dc25ab0863aa4d3dea2e6db19914d4de8257c6ab9ebdfc4b6bf51a65b28043155bc04716c1baae7b6ec28762bd6946fa9c35d5b2b97651a56b7c92cde4e65cf82b6b6592e4b40fde5b03ec9351ced49e924b8ac3969eabe4d45585e6b9ae675d1b571869239793dfbfb256f75edb91b1e48b52c976033874b0556a919dcf529a1644f4ddc46a4c37a5b66caca0df6c6ca9eb3f5feb1f0f2717ab6feef07fcd07e0f970924ab9b89a2d47133d8fafd2ba39da387cfe7cb6f9d96d85dbdda7e174b67dfafe47b7fb2aee2fde10fe3a9d5fd151d28abb1fba6ab1379df1d5727ed51e4eca599ace569157efeef7c1dd9af2cb35375eb2c0f5dc4d0ff265bb94eaf6dad7ad985f6f6fa9e5d3d73b1fe3bd35b5f64e28197f0fa6be08b6f769be3c3bbd7efa61babb79f2e6627bb3bc776beba6eb7a334b7677fee6e6eb038cb4b4d9723e6d7769f97fecec7fcde85731f696ed329d1dceccc7e3e9d9d9f1f5cbabade31f5f7e7eb9f6fee0e436bd5adbd2bfc7f84e05f3af83fc57992917b33e85b497d38b19f9910674b5599dce4e278f7b3a5fb441a98b651a6bfcf279de4a9b5eb77a3c4fd7edfcd9ac5facf2bad210ebb554b5452d741f90856b65f4ae16d9bd8846ff3b3e8f7ff351aef87c7ef16173b66cf3cbf974d19eade25a1f5a2e9e0e8780e853a373145a3ad79c353afde12eee39dad8396e8b25bf5a5e7c1dce9841b5bdcac1f349f6a4ba36689aee565b35cabe9ca7d92295919767ff2775bcf84236c6b65ea7f3f3f69fc36879f1a4d6795b2cfee33bd2873b78dcebe591a7fdabbcd33e1345e85c02aae0b3f5be7772ecb2ed4d07a963412e0a82690bc2981d4ac2a1ac0cb5c6844ab758452a6eb5addfe329585e3ae5bbab488e6aae22fc4e67a19a30ced98afe0509e5c940401d7b82d60372d28d2f6849b9176f3f2d07613e1aadf748394fb549e564b473997fbe5c7e09c1c94f6f27d3ebb793c76f27efa74dedddfcb0db8f975b1bf5c7f9e6bbb527ef3f7dfffddbc9c3b7937189e4750a22c6db91146e598cf72af07639de3ac3bb0f17b5ad0296f261756f02bc69f5cdea63995e9ead82f09bb6587db548e7cbd5170f9ec8f5cdb5e9d69ba34f77eb96bbef2f2f3e1fdc1ebdc8f2ddeb4f37472e5f3c7bf9e66a6fd786d3adfdc3fa215c6dbdd8dd68faf2f2f5a19c763f4f3bafd7e38f596e7e94676ef7fcddede9e6c1e6e18bf46067feea209e3cddf062ad1f6cb4b3abdbe3ad6de7f7f7ddb3cdcbb8979f7cec4f774ed6eba763b5a6cf0eae76e73b27388457374e52c3b3abed17db7bcfeb8b2727879fd583c5cd0f3f6cfb3d7d2c6fdafabbc5fbab94d7fc52ecee9caf1ff6edddcd072f1f3d4ad7af366e9747ede30fcff617429d84bda38d753b7f7ab87cf3fec9f6bbfa6ef1d1eef6cfcf3ec783dbcdfdf75bbb6bf5c1f92bb57bb8be34f6ddfaced67979ded63f59b9b6b511b75fecbd39da3fd5a7eab8ec9e8be9d3dde71f2f9fa8541f3d7abafe727ebc2c6de7401c4d5f9fec5d6e9d1f9e960f174fd6de4e7e9e0cd2cae717e5fdd99d9c8a7b3faa45d723f0aa2561da42c5df6146bccdd1b5ae2566a5f6600dcdde506065ba1a7d79d6a6a767344950a8bb199f6f4660f94b549f50f8a474758698905f8a01bf8a3fb459aa14abd6f8475c48c018281b14462cb80cbf2433c820fcbabd8e171aaf266881a2ab1545349342d7ceabea24ae50b000f6902ba2caae7b09c9496c88d6721cc0685f8bb149ba58825690aac2bc3a8c0a46d2c6e119b0b695be2d8e1695ec306564cb161de95fec6d878a63f3a2d556ada8c2d728e4fd1d61c14d314d892133f062719cc294ac9411498bee1d662ee76a757009eb15ba0fec3f058bf54a2e8f1d69232b2e0d83c4af8db24a54fe0696a1c5d85251d2e05065156487cdc0c451934cb8a36055053be2d58efd682f42a5a80245a9913f26c03f4e9698fba883cd266b231a6b46082b151b202193a5e39d6d9c460a356c248b8ed943d2c332e6ec934a582f1fbb6a144162c8b884b42917a992966304495951488a430c4f6a8b249da6e86272344ec664e0b1e64dee8143da8add062755caa6b2e5b785f9c792af08c359a69dfecb8f8ce43fbb149beab6e3c80596b5349280872e156482441c7c6708c2a6e3fe70f6d1764fd52ce7fc159b20aafe01519e46a8e44117db4c60b70857494c0826081792c6ec9a565c938522975e8b88dd294d2a12f011a37e36a9564d04400affeda52515a5637f91880412b371585f983d21ee7857dc302c2fc12c6eb931da3026b023b3c282d79ab94756d30555493a34706e233d425e82255e4228ba4a5a1b8da8fa2482646e186bd0bb2386e484684a33ad07fcb1758c69cebb5e9d36e35c34b6cccd03d504e20d738fd6142c3ae74d91367deb7882cfd812ea08376093c89da194b0018442c8312639cd80c494c1c0ddc992529e0944303b7a0d62bec6d36fd563185263838dd9430b6722278467c7f92d386524e373a38020c7149115621eb5ef09be29b6dec58067a323a08cfcb013c3a85d2885f28372450263c2591bd91030ab184766486e63b3a3f45ff1135e81751b6005424cf392212de630ec032787950844e3b02accc6b02d6bee7918130887497b85c90499b3694c8f4e981eed1ab40842bb0b19844a2e04efb919a6b4a1230a051997964cd4f6cde389d99e6625b94d911eedac48080cd3b80bccde0cc206f6622f28a1a69b6dd6d9c35416abe8fa108e3fc513c65d86e104e94d76d24192b4a6e3ef8d0433a8c3708d916f8a8509720bb8f30cbb741450d6151b98a8100b70194c33ba04af5b9001ae10bc52336828312900a9c0d0ac0227c38096ae011724d3bfc41309404f738bb659c2846244c83654af73e09a5c83145d8e60adfb1abc1b36c01b8c7f82c371f6e354d134c230be6b0f45754edd30d51a0ed592707ccec6a8e6a943b4d8027455c90cdd25e798f2bf753cc5e28a81f38d74380b4c1824c045ad8ec72b0641221bcab99452ed8e44f544171bef19ab3407aff7f0f4070715530495a29198341e38ad34839c27573a42c9742872949e93e336405b1992218be83a5b19f11f830f9a52d41dba6182c38fa1627c21576a2450abbe7a3a29396ce8c185a17975b83b09867365275f200a6e930c40a488a40941525a16199091f85446b750c58eae16c137be56a8b94269d8a180d35b793a47a50b7ecf0d34ebc8d26a3453f61e93d580c0a87218231b496107b683cbe612b5a9e0217ff30c152078ba4fabc646c95fb7793cc9cd59620850fdf1c08091bc6beb309e19135a564f1223db8fa8cbbf4114b37c090158599a188ba622510289f7d5a652cde876975553185aec2d232cc6df555d71bb1e525839a80e1302eb522b35451ed125b8128b4b2a70f64cd1638f2640728e0ce5a243f1a42e5564b57fc551a535c6e75a023a94ad8263347792b8e6d1bcd8338edf5a53e127e34178f67578f33a9e5636db57cc2bc7d3f7f130535b8531805671e351b9e65ce1806051d640190dbdd244c674d68aeacb517aa9fa37cf511e9df10c3934552b153b926dc1a8ebd4abc54d09464b7c14dd0c6b9325c135dc026d29a4cba4f81ba2ca7dbd1bff266c3df03403a49c3663c118907a2f383610526af2c51832c0fc06e5109511b2e2777d482b75f10c0496ef14c31ab51185f3381f481953184eb779d41761a614bd405b952c7038a606d24319eeb971997c283d178a6f147c0905e3d850347c33b5b116e60178aec091a8740b5a8f4e93a114e11948460c1106330ba6c88877c4cb67eb195b00834cae8f274d0ac384491baf0e90d3ad519764a1f7c0c1be75248da1b6ca4e9e7e9dfc6972287c3c0ba0f8d44ee383a97d2ede38e61cd269e026fc3a1a68f118358be15efd97f7831f98a49462153393aebe6376e2f83f2ce80a4b4d3ec8526a20188f24d4ef0f46eeeed71099138d011be3cb8444b95367b0f3cdf50815c8f17f1218aef0dbba939fff0969dc82ee1c1c0000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8'});
+
+      return callRPC('gettransaction', '31e0e7d688346c8c86fe16dd5b7f1e7860fbbcc81bb23cc62100f2bf72b201e0', true)
+      .then(function(result) {
+        result.should.eql(results.tx3);
       });
     });
   });
@@ -927,6 +970,85 @@ describe('BitGoD', function() {
 
   });
 
+
+  describe('Get transaction by sequence id', function(done) {
+
+    before(function() {
+      nock.cleanAll();
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/sequence/nosuchsequenceid')
+      .reply(404, {"error":"sequence id not found for this wallet"});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/sequence/10001')
+      .reply(200, {
+          transaction:
+          {
+            "id": "56d7d2e8f276d6f509b10e337130249c",
+            "walletId": "2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX",
+            "toAddress": "2N2PUWtjM27cbR1X6rpBUQD3FqsMLCbqxYA",
+            "transactionId": "a252387200b17924127507c8b13fe2833c0889f75a096261ee1d5f87fff383ce",
+            "date": "2016-03-03T06:00:08.568Z",
+            "createdDate": "2016-03-03T06:00:08.405Z",
+            "signedDate": "2016-03-03T06:00:08.405Z",
+            "comment": "test_comment_8",
+            "amount": -10025650,
+            "fee": 25650,
+            "size": 370,
+            "state": "unconfirmed",
+            "instant": false,
+            "instantFee": 0,
+            "sequenceId": "10001",
+            "creator": "5458141599f715232500000530a94fd2",
+            "history": [
+              {
+                "date": "2016-03-03T06:00:08.568Z",
+                "action": "unconfirmed"
+              },
+              {
+                "date": "2016-03-03T06:00:08.405Z",
+                "user": "5458141599f715232500000530a94fd2",
+                "action": "signed",
+                "comment": "test_comment_8"
+              },
+              {
+                "date": "2016-03-03T06:00:08.405Z",
+                "user": "5458141599f715232500000530a94fd2",
+                "action": "created",
+                "comment": "test_comment_8"
+              }
+            ]
+          }
+        },
+        { 'access-control-allow-origin': '*',
+          allow: 'POST',
+          'access-control-allow-headers': 'Content-Type',
+          'content-length': '41',
+          'content-type': 'application/json',
+          date: 'Mon, 30 Nov 2015 21:55:36 GMT',
+          connection: 'close' });
+    });
+
+    it('sequence id not found', function() {
+      return callRPC('gettransactionbysequenceid', 'nosuchsequenceid')
+      .then(expectError, function(err) {
+        err.code.should.equal(-5);
+        err.message.should.match(/Invalid or non-wallet sequence id/);
+      });
+    });
+
+    it('success', function() {
+      return callRPC('gettransactionbysequenceid', '10001')
+      .then(function(result) {
+        result.transactionId.should.eql('a252387200b17924127507c8b13fe2833c0889f75a096261ee1d5f87fff383ce');
+        result.walletId.should.eql("2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX");
+        result.state.should.eql("unconfirmed");
+        result.sequenceId.should.eql("10001");
+      });
+    });
+  });
+
   describe('Send to address', function(done) {
 
     before(function() {
@@ -935,6 +1057,15 @@ describe('BitGoD', function() {
         .persist()
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
         .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-19T19:42:04.212Z","expires":"2015-01-19T19:42:14.212Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":81873005758,"balance":81873005758,"pendingApprovals":[]});
+      nock('https://test.bitgo.com:443')
+        .persist()
+        .get('/api/v1/tx/fee?version=12&maxFee=1000000')
+        .reply(200, {"feePerKb":10000,"cpfpFeePerKb":10000,"numBlocks":3,"confidence":95,"multiplier":1,"feeByBlockTarget":{"1":102926,"2":100000,"3":10000,"4":10000,"5":10000,"6":10000,"7":10000,"8":1000,"9":1000,"10":1000}});
+
+      nock('https://test.bitgo.com:443')
+      .persist()
+      .get('/api/v1/tx/fee?version=12&maxFee=100000')
+      .reply(200, {"feePerKb":62868,"numBlocks":2,"confidence":85,"multiplier":1});
     });
 
     it('sendtoaddress bad address', function() {
@@ -955,20 +1086,25 @@ describe('BitGoD', function() {
 
     it('sendtoaddress success', function() {
       nock('https://test.bitgo.com:443')
-        .get('/api/v1/tx/fee?numBlocks=2')
-        .reply(200, {"feePerKb":20001,"numBlocks":2});
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+      .reply(200, ["1f8b08000000000002038d53db6ee23014fc95cacf741b3b894978a3dc2a92a03440a0acaa95639b602017722554fdf775a05d69575dede625d63973e68c35e337f04330d003ba8691ce306481ce0d5df9fc4c6a6086b04641075c716866fa64a0cd87de6c168f1a3c312ef6d808e3a7f0f0826ddf74f3b5841e49c08f12bde07971b722c7232fee604b91f769212a0e7a4556f20e289a549e414eb67cc7647f9b717e9195375088a8ed2005e27b05de237381d49ed6ed41f59ba91b1b89e5e754643cff0a843e40ef1d405824e24152c605e8c10e48335191e2bae1c01bba2322960cdfdfc0392d0349d5fe30864ee3d4fd9317d0d1d61b0da3a56fa9895ef34398a083c30cb75b6c2ce3920dc3474dd768e94ff3e54c5f5f2e75c4c65ebd4f925514ed719254a38d9d108cc593f378aacc699995f1129fac7250d1d419eee4355252ece4e207e541917aff2a643c2f756a6d9c996133bad840ad3f1449ea333c4fc381bd4b473317f96b7b6353926d67f0544f5fce465336297e3e44e31579b10f9a6d0f3d7de82c5623c70ab0b9bcecac353dbb2e5a4ffe5fc884fbf96a3288604ec27a399d77fbd674bf82934bc1acb356a770e99ae77496ebaee59efc313e93b5b97f5eab1b24305be8c9b4a1e3112b764de4faa2f6fa51360ec3aa3f8f82fd8af0f24f21afd2c3946791c87391b45edd1cede4298f59a712bc061f26b79e9639cf6e7eb6a75bac21618c9981a9688c5088da54abaaae2a186a8a09fec97e555090b0a57d95abd2344b2a72cc3d7e2a65fed8355657bc88c33ea5b7a8dde2fd59fd9cb951d024de8a2ce2ec911c494c6518758c8daea22003991f5c2438f2afdbc1d743bcddaa216c28ede33521543a20e394cbc726256a2ad2ba6a5781d05425ba8c7f6998cb655297f25bd1bb0db6f5f79f71ac739b21040000"]);
 
       nock('https://test.bitgo.com:443')
-        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=112000000')
-        .reply(200, {"unspents":[{"confirmations":228,"address":"2N2XYoQKXQGUXJUG7AvjA1LAGWzf65RcBHG","tx_hash":"ed426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":0,"value":10000000000,"script":"a91465cf7dc1dc237ad59225140773994a747674e42387","redeemScript":"5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae","chainPath":"/0/27"}],"pendingTransactions":false});
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=111000000&instant=false')
+      .reply(200, {"fee":0});
 
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-        .reply(200, {"address":"2NAeb4PGKKBEFdUt2seThoomcR4YR5SpbuK","chain":1,"index":80,"path":"/1/80","redeemScript":"52210306d7f5f0c559ff585f215c54d769f3fa9460193e334d16c162b97d1d06c812f82103798fb98f249f00e93523cb6d60102ac9aed44288b1482b9d35b6d70d315ae4c621025d3bc26ba30510772f4404d00c5d907dbd17f7838a4facbf157e817fc6694f5053ae"});
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=111000000&minSize=0&instant=false&targetWalletUnspents=50')
+      .reply(200, {"unspents":[{"tx_hash":"e221a92abd3b446787550d7c34954b76a4fb49f5eb1091bdc9a9adabeed30de5","tx_output_n":0,"date":"2015-07-07T20:37:17.641Z","address":"2MvjLv8oyxrnYdTZ8zmmb1QE8uf16VVi4fZ","script":"a9142639ced1448d394e718ad6f51d4c427f1eb6622b87","value":56547875758,"blockHeight":498077,"wallet":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","redeemScript":"522102598ab55d2be39e124fec05bdcc5150e71363c7c41156c67f9fcdccd88b3961de21033cbe7d4b35f76bf777dd87557d19d06b50c3ec60f13e4dad5029b63b659399102102ee327f905a9eb37ea806172d6432fce61e0fe63c2b2999266d261d188f0a430853ae","chainPath":"/1/105","isChange":true,"confirmations":224521,"instant":false}],"pendingTransactions":false,"count":1,"total":2});
 
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/tx/send')
-        .reply(200, {"transaction":"aaa","transactionHash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6"});
+      .persist()
+      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11,"validate":true})
+      .reply(200, {"address":"2N5rsWM9g6WpPJ5Y1cLzgxMmH8wZnCEbGbR","chain":11,"index":174,"path":"/11/174","redeemScript":"522102404170c469b0f6669386b30ff2e0e24ae11a02c6086aa15aa6832f2d6b371ec821038dbf33324a79aacc21007b95e9bf9c90b27fb4e6dffb78856c7eac31e93295122102f98e6e2bedf90d39034ccf17be4f5eca395fb0b1e2f536ef4bc4ddc5b9f9ada453ae"});
+
+      nock('https://test.bitgo.com:443')
+      .post('/api/v1/tx/send')
+      .reply(200, {"transaction":"bbb","transactionHash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","instant":false});
 
       return callRPC('sendtoaddress', '2N3So1bs9fuLeA3MrsBGPmkaYMXGWQn1HWG', 1.11, 'this one goes to eleven')
       .then(function(result) {
@@ -978,7 +1114,15 @@ describe('BitGoD', function() {
 
     it('sendtoaddress success with instant', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?instant=true&target=113000000')
+      .post('/api/v1/billing/address')
+      .reply(200, {"address":'2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc'});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=112000000&instant=true')
+      .reply(200, {"fee":112000});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=112112000&minSize=0&instant=true&targetWalletUnspents=50')
       .reply(200, {"unspents":[{"confirmations":228,"instant":true,"address":"2N2XYoQKXQGUXJUG7AvjA1LAGWzf65RcBHG","tx_hash":"ed426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":0,"value":10000000000,"script":"a91465cf7dc1dc237ad59225140773994a747674e42387","redeemScript":"5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae","chainPath":"/0/27"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
@@ -1019,6 +1163,15 @@ describe('BitGoD', function() {
         .persist()
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
         .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-19T19:42:04.212Z","expires":"2015-01-19T19:42:14.212Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":81873005758,"balance":81650985758,"pendingApprovals":[],"unconfirmedSends":null,"unconfirmedReceives":null});
+      nock('https://test.bitgo.com:443')
+        .persist()
+        .get('/api/v1/tx/fee?version=12&maxFee=1000000')
+        .reply(200, {"feePerKb":10000,"cpfpFeePerKb":10000,"numBlocks":3,"confidence":95,"multiplier":1,"feeByBlockTarget":{"1":102926,"2":100000,"3":10000,"4":10000,"5":10000,"6":10000,"7":10000,"8":1000,"9":1000,"10":1000}});
+
+      nock('https://test.bitgo.com:443')
+      .persist()
+      .get('/api/v1/tx/fee?version=12&maxFee=100000')
+      .reply(200, {"feePerKb":62868,"numBlocks":2,"confidence":85,"multiplier":1});
     });
 
     it('sendmany no recipients', function() {
@@ -1045,26 +1198,35 @@ describe('BitGoD', function() {
       });
     });
 
-    it('sendmany insufficient funds', function() {
+    it('sendmany no viable unspents', function() {
       nock('https://test.bitgo.com:443')
-        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=301000000')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=300000000&minSize=0&instant=false&targetWalletUnspents=50')
         .reply(200, {"unspents":[{"confirmations":1,"address":"2Mven9jcBoUHa1VQRZ9Jy8nffSqw8wKZQME","tx_hash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","tx_output_n":1,"value":9888990000,"script":"a914255ccaf2136ed07f8bf6377710c45bfc1e83ecdb87","redeemScript":"5221023386c28561433f727a66ecd952021717a657aa2676c3e9d0960b2cdebe9020822103aa1b8b73bcd211b8d007495da84deed00e41e27445af4beb5e0187a5b4665f71210251e6b6148fba4449d2c5825b338349afed6c7e05054caafc799888de879412ea53ae","chainPath":"/1/79"}],"pendingTransactions":false});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=300000000&instant=false')
+      .reply(200, {"fee":0});
 
       return callRPC('sendmany', "", recipients, 3)
       .then(expectError, function(err) {
-        err.code.should.equal(-6);
-        err.message.should.match(/Insufficient funds/);
+        err.code.should.equal(-10600);
+        err.message.should.match(/0 unspents available for transaction creation/);
       });
     });
 
     it('sendmany success (recipients dictionary)', function() {
       nock('https://test.bitgo.com:443')
-        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=301000000')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=300000000&minSize=0&instant=false&targetWalletUnspents=50')
         .reply(200, {"unspents":[{"confirmations":1,"address":"2Mven9jcBoUHa1VQRZ9Jy8nffSqw8wKZQME","tx_hash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","tx_output_n":1,"value":9888990000,"script":"a914255ccaf2136ed07f8bf6377710c45bfc1e83ecdb87","redeemScript":"5221023386c28561433f727a66ecd952021717a657aa2676c3e9d0960b2cdebe9020822103aa1b8b73bcd211b8d007495da84deed00e41e27445af4beb5e0187a5b4665f71210251e6b6148fba4449d2c5825b338349afed6c7e05054caafc799888de879412ea53ae","chainPath":"/1/79"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-        .reply(200, {"address":"2N5p9bXC4poJEb5jNcbu2BxuNeSn2qbEtpo","chain":1,"index":82,"path":"/1/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=300000000&instant=false')
+      .reply(200, {"fee":0});
+
+      nock('https://test.bitgo.com:443')
+        .persist()
+        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11, "validate":true})
+        .reply(200, {"address":"2NBDCXfVrK6mQkVm1Na3sfVEYSHRUZg32gf","chain":11,"index":82,"path":"/11/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
 
       nock('https://test.bitgo.com:443')
         .post('/api/v1/tx/send')
@@ -1083,12 +1245,17 @@ describe('BitGoD', function() {
       ];
 
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=301000000')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=300000000&minSize=0&instant=false&targetWalletUnspents=50')
       .reply(200, {"unspents":[{"confirmations":1,"address":"2Mven9jcBoUHa1VQRZ9Jy8nffSqw8wKZQME","tx_hash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","tx_output_n":1,"value":9888990000,"script":"a914255ccaf2136ed07f8bf6377710c45bfc1e83ecdb87","redeemScript":"5221023386c28561433f727a66ecd952021717a657aa2676c3e9d0960b2cdebe9020822103aa1b8b73bcd211b8d007495da84deed00e41e27445af4beb5e0187a5b4665f71210251e6b6148fba4449d2c5825b338349afed6c7e05054caafc799888de879412ea53ae","chainPath":"/1/79"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
-      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-      .reply(200, {"address":"2N5p9bXC4poJEb5jNcbu2BxuNeSn2qbEtpo","chain":1,"index":82,"path":"/1/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=300000000&instant=false')
+      .reply(200, {"fee":0});
+
+      nock('https://test.bitgo.com:443')
+      .persist()
+      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11, "validate":true})
+      .reply(200, {"address":"2NBDCXfVrK6mQkVm1Na3sfVEYSHRUZg32gf","chain":11,"index":82,"path":"/11/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
 
       nock('https://test.bitgo.com:443')
       .post('/api/v1/tx/send')
@@ -1107,12 +1274,21 @@ describe('BitGoD', function() {
       ];
 
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?instant=true&target=801000000')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=800000000&instant=true')
+      .reply(200, {"fee":800000});
+
+      nock('https://test.bitgo.com:443')
+      .post('/api/v1/billing/address')
+      .reply(200, {"address":'2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc'});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=800800000&minSize=0&instant=true&targetWalletUnspents=50')
       .reply(200, {"unspents":[{"confirmations":1,"instant":true,"address":"2Mven9jcBoUHa1VQRZ9Jy8nffSqw8wKZQME","tx_hash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","tx_output_n":1,"value":9888990000,"script":"a914255ccaf2136ed07f8bf6377710c45bfc1e83ecdb87","redeemScript":"5221023386c28561433f727a66ecd952021717a657aa2676c3e9d0960b2cdebe9020822103aa1b8b73bcd211b8d007495da84deed00e41e27445af4beb5e0187a5b4665f71210251e6b6148fba4449d2c5825b338349afed6c7e05054caafc799888de879412ea53ae","chainPath":"/1/79"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
-      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-      .reply(200, {"address":"2N5p9bXC4poJEb5jNcbu2BxuNeSn2qbEtpo","chain":1,"index":82,"path":"/1/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
+      .persist()
+      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11, "validate":true})
+      .reply(200, {"address":"2NBDCXfVrK6mQkVm1Na3sfVEYSHRUZg32gf","chain":11,"index":82,"path":"/11/82","redeemScript":"52210389f7e8e63adfcaa99b11523cbbd9df20ba6ff1a1ff8a2a68e27cb3e8bf21c5172103025ca7a7efedf5d3b544d7f87ee86cb0e1287dea9b5f2d98696d6c555a2dc8a021032d488227abffbd9a10a771bdc8ac469cc6f136a054b83dc826a3e252656cbc0653ae"});
 
       nock('https://test.bitgo.com:443')
       .post('/api/v1/tx/send')
@@ -1122,6 +1298,62 @@ describe('BitGoD', function() {
         result.should.equal('1e1f5d1bb114554ef43ee67f593cbe68027ab12a8b274c53a5c367cda3f8898f');
       });
     });
+
+    it('sendmany success (with travel info)', function() {
+      var recipientsArray = [
+        {
+          address: '2MtepahRn4qTihhTvUuGTYUyUBkQZzaVBG3',
+          amount: 2,
+          travelInfo: {
+            fromUserName: 'Bob Spendthrift',
+            fromUserAccount: '654321BOB',
+            fromUserAddress: '42 Merkle Branch, Blockchain Station, CA 98765',
+            toUserName: 'Alice Hodler',
+            toUserAccount: 'ALICE123456',
+            toUserAddress: '50 Satoshi Square, Tokyo, JP'
+          }
+        },
+        { address: '2MvpZhq6zUu3UARdJKZH7TTfqHJ3Ec1YAjv', amount: 1}
+      ];
+
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=300000000&instant=false')
+        .reply(200, {"fee":0});
+
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=300000000&minSize=0&instant=false&targetWalletUnspents=50')
+        .reply(200, {"unspents":[{"tx_hash":"066a11f6f0fc36cfbe8e0f9dc6d5b1183a64f2b4d9aad7a18031e5ad6759c286","tx_output_n":3,"date":"2016-05-09T22:57:26.007Z","address":"2NAUBjU4VjQaupC6u2HHZUtvndDfomw84iB","script":"a914bceda9bead12c91270b139b2d38bc272781e735e87","value":1282510000,"blockHeight":827898,"wallet":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","redeemScript":"522103848aa655416b8159b59b00457ddfae2621b316602bdca401d5a5c85404b2d40121036babff563530d141ad005c237be6dea43277535276db1bb4f0a1eb9fb2676d6d2103f2f3202a31d5d08edd27ea5f98fc1738d79a871c255b62f616bd11a0e311de0753ae","chainPath":"/1/227","isChange":true,"confirmations":21,"instant":false}],"pendingTransactions":false,"count":1,"total":50});
+
+      nock('https://test.bitgo.com:443')
+        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11,"validate":true})
+        .reply(200, {"address":"2NBDCXfVrK6mQkVm1Na3sfVEYSHRUZg32gf","chain":11,"index":272,"path":"/11/272","redeemScript":"5221037b3e5badb2e93786fff2a7d05a38c5dcce22a29896918c12606d6f123ecb0b0c2102b45e2dcedcc3aefd713e76a9d27d08dde6db5c1b968355faaeee8e5dca3c31622102ef84e5ca2fae26a350fcdd1a5e6aeedca3bdb89d44147341807a6d0fbf15289653ae"});
+
+      nock('https://test.bitgo.com:443')
+        .post('/api/v1/tx/send')
+        .reply(200, {"transaction":"0000","transactionHash":"a5ba4ce204f2a33c3d9f0e9fe01921ed4077185ab0e07190f12cc030d927b983","status":"signed","instant":false});
+
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/tx/a5ba4ce204f2a33c3d9f0e9fe01921ed4077185ab0e07190f12cc030d927b983')
+        .reply(200, ["1f8b0800000000000203ad554d5324370cfd2f7d869465d9b23db7e52390cd2ec9928100a91c64cb669a253dc07c14b0c57f8f7a805a486ea9b8fad0edb29e9e9e9ed5dfba5eba49c73eb32bd51ad72c231694d44c4dad1a4816aa38130244cfd95413209906b6148346920d3945ecb6ba617ef7175ff78f550e7931534cf4090c1b53b0b9dc6ac6e49d0d1aa0195a8e5128c6ec824d8d9dc93161614e818ca746ce70554ce16555246b80b68ddf36696a71e260e2f18714fc859e68550f00396fb6ba7eb8592d17dde48f6fddcd5d5df7f3d5e2858a21628046cdb482545aaeb19a96a490f80c1091490bcf4e12b304866810aa67a1e053b19134d12be22faba566f969907adf4df0e9cfad6ebed979cebbd68f6ea25cb894f96a588ee43f2feb0dcf8e07773bed67b3e9fa6475303d3f7938d9f9fae5e2914f770e46f5d67cbdd24aac79594f5baf60f01e6c7d7331bba5c793159e7c38968f3f5f1c86e9b4dd1e7ec4fd02e71faed6dfc1e0df60f63dd8fdb06bafdcf46ce7f6f7bc7fff78766eafce6e1fbeec153868f3bde3dd37cc52b42ea1dfe8bcf8dc0fbab5bc5bd5adaeccb81f3634376f2fca6897476deab0bcebebb336ff47156f308ed229efbadff68e8f8e86fd073a888f9f7e8c97c3e1e5d773fa749a7e5d9c7dc7d8468ddfb8e41f20ffad375a58990fad57c32ffbf9b0d874fca60ed20f97afb2f4c362c96392c6d70bfd9e8daa74e6b51a8854ac4f1458aa47351c831a8f2565352239540f66105f288969b1e65a1a522b6a6002203664f019a8895e525d2ea2d1faacd50c8c8124960a22904b30b5a41a8ae8151b91530a28e4b9aad54b91a251147d8ade378b26153fa218902ce89cd14b2210b2093a1c622d9603e8ad1172b9706b215a1f5182c91244f93213652ed615036f19d592c18895cacaaa4681e633666f73892d64cd908dc31a35594a246c125589248e58034c7966d4743680283fe2a257b6a2b6d4c4a2aaa40c35a72a4a48743cd510a2aa44402936c06aa959ef9491cae9473e185d54aade3ba01cc1a7ac8f6ae88348633d6f21a302189ba5e8741a2bf3252a86cb5687218c185a686ecd137a9d83e080c5185f2c865c490b756843f0e8adf62243d6be6a8f9565cb96748b64c468b6a1353a103583a8be223654f64d7917081825248eaab8f53e93d5de5316003615014447b15719dacb1a1d516ccd26bf1a150227706a999aa06a63412d40894b6a5a68a000ca8b103984e6a28d41fba48d31fe7dbc0d48b1291f6936b41263f25a0324e7a566d1e99822a12b2506aaacc491dfc763c9585187a9249f74c05aa7223ba4a03f83406cd5cdd1aa7863fee7d53dfd0dc845298497060000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8'});
+
+      nock('https://test.bitgo.com:443')
+        .get('/api/v1/travel/a5ba4ce204f2a33c3d9f0e9fe01921ed4077185ab0e07190f12cc030d927b983/recipients')
+        .reply(200, {"recipients":[{"outputIndex":0,"address":"2MtepahRn4qTihhTvUuGTYUyUBkQZzaVBG3","amount":200000000,"enterpriseId":"5578ebc76eb47487743b903166e6543a","pubKey":"02b6909eef9999410a2db6e5972b4d33f0803c818478bbac0e65df1626acd88f31","enterprise":"SDKTest"},{"outputIndex":1,"address":"2MvpZhq6zUu3UARdJKZH7TTfqHJ3Ec1YAjv","amount":100000000,"enterpriseId":"57057916c03b4a5d0644e2ad94a9e070","pubKey":"035fad5a8113dbd28e96da7e9106e492dd6b8819e38a67745609bebce9921ba984","enterprise":"SDKOther"}]});
+
+      nock('https://test.bitgo.com:443')
+        .post('/api/v1/travel/a5ba4ce204f2a33c3d9f0e9fe01921ed4077185ab0e07190f12cc030d927b983/0')
+        .reply(200, ["1f8b08000000000002036553c992e23810fd175fab7bd06659aa883e180accbeda18082eb216308b0db6812a3afadf47b82662226674512a33dfcb55bf9d5439ef8eeb618800c1544993680a004d9454c248c520a242383f1c252a6d3d1180f427707f021e22fc4ee0bbebfe8511dd580f53e4e77656e9e252a4a5eed5bc84500112a3a0e0520b680432984849b171b18bf8ff5016d34cab20b7862aff2f99eb319d488fea847884791ec109071852aaa94bf02bc9aa1059296495e6590d116e2288d4b6348304c6122b6e80e64603c811d48a00cf83cc1509d0c0831c1888a40418288ebc84336c29f35b75b955bd4ce94fe71d7ce71b8bd34957af6e8cf952b4c8e2633e1e67ed2f1ab0e7b0c3765977775cd3e1924fcb555d89af54a1cbf2851855fa22f6f38c5cc374bf0fefd12d08d7d157d43cce364fb16c06afa0e29cdf321b00817fce77dce92d19e82fcb02b06000b976384c4288b5b4f91b8d24c71a249e35daf6328c8024585348a88711241ab81273e5510985aed3fa970f259403aeb5e1f61008045209d52ef7504214c606308025838c782c49840d475d6520b5bb615784190c2d9fce64f175a9b40a0b71d7a75e66724bfd7beba4f7adf3be750651510ab39cdea0cebd518b1cf381683f7efdda3a3fb6cecb05da3bb5237f89af9ab7ceb17cc98859b17a899458e99c2b5d134a79aeb1c2eea6a835f553a6977d4d622dbaac55a53855b5a27ba8daf3a879ed5dc9775cf9ad1f297498a5ecd327cf49eef729bd74321e7e341e9bfec39fa5de73eef639081445ed063c55a11f97d03d0fa361ffbaf749eb79374723746b94df492602b2ce321ffabbac354a2e87ebd0256e374b26844ee120367cc636605909395ee4c93184fead3cecf8a6df073bd569c6dd5138dc9d56c5e0393db3d1b0fb5c156f6b15dcdbd3a8dd8e5b66b2aa9a8f315ece5bcbec34b9e3e3e6dc948daffd7d3666f2fcf6b69be4ae5c00e375e25ea3397eac8fe1c7637508545c74f0f02d02277f9d4ef3eb35b3b30355af2c83bedbef05dea7bb4fce8b098940a35ceac5189fbbfd98959d68174d104ca659c7139f621c7d14c5486c666b7f1ec64f2e2e07994d9b4fbe9ce25bd70b8fe17cb31996f0b25a2d061f71e893cf4660ff7a7c5b81c8f6fc8ff3e76f5a6c094675040000"], { 'access-control-allow-headers': 'content-type, authorization',
+        'content-encoding': 'gzip',
+        'content-type': 'application/json; charset=utf-8'});
+
+      return callRPC('sendmany', "", recipientsArray)
+      .then(function(result) {
+        result.should.equal('a5ba4ce204f2a33c3d9f0e9fe01921ed4077185ab0e07190f12cc030d927b983');
+      });
+    });
+
   });
 
   describe('Set tx fee', function() {
@@ -1137,7 +1369,7 @@ describe('BitGoD', function() {
 
     it('getinfo', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/tx/fee?numBlocks=2')
+      .get('/api/v1/tx/fee?version=12&numBlocks=2')
       .reply(200, {"feePerKb":20000,"numBlocks":2});
 
       nock('https://test.bitgo.com:443')
@@ -1165,28 +1397,6 @@ describe('BitGoD', function() {
         result.unlocked_until.should.be.lessThan(Math.round(new Date().getTime() / 1000) + 300);
       });
     });
-
-    it('send should fail with insufficient funds', function() {
-
-      nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=211000000')
-      .reply(200, {"unspents":[{"confirmations":228,"address":"2N2XYoQKXQGUXJUG7AvjA1LAGWzf65RcBHG","tx_hash":"ed426d37e56919485bec45c61043596781c09af0e9637998fcace7f59631c5ae","tx_output_n":0,"value":10000000000,"script":"a91465cf7dc1dc237ad59225140773994a747674e42387","redeemScript":"5221021971b4d7c5d919e2655134ac12daa755cd1d6a14996c5b272de24178f3649e952103f8bb35d209e20c1f64f9f2c5686efbcb212a504d3c5ee65e9623187c03009a9321036d051911592ef2a7a72bd53c767d1e57f260c7627a8115d6204d9f33c7dbcc7b53ae","chainPath":"/0/27"}],"pendingTransactions":false});
-
-      nock('https://test.bitgo.com:443')
-      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1})
-      .reply(200, {"address":"2NAeb4PGKKBEFdUt2seThoomcR4YR5SpbuK","chain":1,"index":80,"path":"/1/80","redeemScript":"52210306d7f5f0c559ff585f215c54d769f3fa9460193e334d16c162b97d1d06c812f82103798fb98f249f00e93523cb6d60102ac9aed44288b1482b9d35b6d70d315ae4c621025d3bc26ba30510772f4404d00c5d907dbd17f7838a4facbf157e817fc6694f5053ae"});
-
-      nock('https://test.bitgo.com:443')
-      .post('/api/v1/tx/send')
-      .reply(200, {"transaction":"aaa","transactionHash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6"});
-
-      return callRPC('sendtoaddress', '2N3So1bs9fuLeA3MrsBGPmkaYMXGWQn1HWG', 1.11, 'this one goes to eleven')
-      .then(expectError, function(err) {
-        err.message.should.match(/fee rate too generous/);
-
-        return callRPC('settxfee', 0.001);
-      });
-    });
   });
 
   describe('Set tx confirm target', function() {
@@ -1197,18 +1407,12 @@ describe('BitGoD', function() {
 
     it('getinfo', function () {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/tx/fee?numBlocks=4')
+      .get('/api/v1/tx/fee?version=12&numBlocks=4')
       .reply(200, {"feePerKb": 15608, "numBlocks": 4});
 
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents')
-      .reply(200, ["1f8b0800000000000203b5944b6f5c370c85ffcb5d4f6251122571b669da2c5c236d0ca34951041449cd4c33be36e6e1e681fcf7f016099014596453403b51d4393c9ff4613acfc77b9b4fc769fde787e9f4f6f5968fdb693d598cc014b96bea3997da2a62d02a2913e65e0be7d1330db40e81a0ab10132b77334d410da7d5d2ecee7cba3f9f5ecfd33aac26e59379e718001f85eaeb3a8675aa6b688f01c22b3fc1aa073b1e97a25f1ffebe7c6877efde1ee6977afdaabdbfbdedf0dbd3761e506e6e76792cf54739ecee4f5ece04399644620a39374d94ad42632d0341b3e45807582f25c6deaa9f7ce0fdd9c560c1bc58abd85653dfdfc99b67b6db6cbde523584dfff07e6f4bfb784537fc24bff8e9f7ababf9e9bbf24b7b7ff973dbcccf366f5e96cb1b7a7efcc37b1e4ccd6e5f7cd1843ec110911a77448ddd1219c43c4c02fabc0401838b4c2549950c80454a1d34c4f7b4b59ea8809af74849ba55cd3de1a8a58f5aabea924755200da563906452c2806459593144ea25f58294885c842fb3e433a0804cd653356ea1408d5a728a43ac8085612e25f64844b1148d7e3db43602e7141a2636f7285bdecdcff9b4207201171096a077c7275b9e373ecfd3e16c5e74378fdde1964fbbbbd9c30c1f575f9305c85828f84d68d84b00956c82c99d04f76c31d751a5328f9a64a86bebbdbb37e68cd5acfc285939ac437d8c94ff43d60f65f90d593d268f03559d30a21247979acbf057516b96282353298cfa35599008620d15fe27aeac8d11a30d0999b336f4e025b514b019fb1349a353eaa3e56ad9f188a23c1aa5486d40cf0269e12a5b47964e0a907217339208e06e63738fa5aa44c7314b6d5252904683b13707d7cd5b64f85707b289f66a9485a45a5001a792b9d784c19565f2af242e492a97e054230f446c42d511fc2e57e1227c43d57cdeefbf43d55fabc97f2eddcd9beb03cf4796cf3b83f747fbf809abd0fc1bda040000"],
-      {
-        'content-encoding': 'gzip',
-        'content-type': 'application/json; charset=utf-8',
-        vary: 'Accept-Encoding',
-        'transfer-encoding': 'chunked'
-      });
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
+        .reply(200, ["1f8b08000000000002038d53d96ea33014fd95cacf748a590ce42dcd568545340b4933aa46c6760849008735a4eabf8f49da9166d4d10c2f58f71e9f7bac73ee1bf81153d003ba86149d2248439d99bafcf959c44454411a0112b8e214cf0af0409b0f679e978e5a34312fced88cd2a7e8f0829cc0f28bb5801e71c88e02bd604579b7c2c7232bef604751f44919d70cf4cabc6212285b2ecea0c05bb6a3a2bfcd19bb88ca1b28e3a4eb2832d4ef21bc578c856cf474b3279bdf6443db082c3bf33867c55720f8017a9700a6499c0eb22a2d410f4a80e7718dcbeb84036bc90ec7a960f8fe06cebc0a0555f74308baaddbf44fb3908cb6b3d1305906b69ae90d3b44997270a9e91be5c6362ff9307ad4748d54c1b4587afafa7269123a9e35fb2c5b25c91e65593dda381946287e721f4fb535adf22a5da2935d0d6ac2dde14e3c83e37227063fc80fb2d0fb5721e379a5137be37aa643c96203b5fe30ce7840d19c470367c7479eaf046b67e3109c6f3d786aa62f67b3ad5a8e9e0fc978855f9c83e638c3993e7417ab916b87c85a5e76f69a9c7d5f594ffe5fc88405c56a32486081a366399d1b7d7bba5fc1c9a5a4f6596b385cfad6997b85eedbfe2918a3335e5bfbe7b5ba516244177a366dc97844cb5d9bf841dcccfa493e8ea2ba3f4fc2fd0ab3ea4f21afc243cef2242e8a38ebbcba392a159ca554aa63d6800f933b4fab82e5373fbbd32dd610534aadd092358a0954ba54abaaaeca086ab205fec97e5550e2a8a37d95c0b513a7519f905ba86e41feac729e67353e7e8049966ee33c61f4111f714a44ec74844c43961553b13eb87078645fb7c3af2fb16eaaa62053eed6d482509640ce08136b2516545315cd500d19424b15e82afda5612e86095df26fc5d9ed62577fff0959300a2f0b040000"]);
 
       return callRPC('settxconfirmtarget', 4)
       .then(function (result) {
@@ -1230,6 +1434,10 @@ describe('BitGoD', function() {
 
     before(function() {
       nock.cleanAll();
+      nock('https://test.bitgo.com:443')
+        .persist()
+        .get('/api/v1/tx/fee?version=12&numBlocks=4&maxFee=1000000')
+        .reply(200, {"feePerKb":10000,"cpfpFeePerKb":10000,"numBlocks":3,"confidence":95,"multiplier":1,"feeByBlockTarget":{"1":102926,"2":100000,"3":10000,"4":10000,"5":10000,"6":10000,"7":10000,"8":1000,"9":1000,"10":1000}});
     });
 
     it('freezewallet invalid duration', function() {
@@ -1258,17 +1466,26 @@ describe('BitGoD', function() {
     it('send fails after freezewallet', function() {
 
       nock('https://test.bitgo.com:443')
+      .persist()
+      .get('/api/v1/tx/fee?version=12&numBlocks=4&maxFee=100000')
+      .reply(200, {"feePerKb":62868,"numBlocks":2,"confidence":85,"multiplier":1});
+
+      nock('https://test.bitgo.com:443')
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
         .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-30T20:22:15.961Z","expires":"2015-01-30T20:22:25.961Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":81350975758,"balance":80708955758,"pendingApprovals":[],"unconfirmedReceives":null,"unconfirmedSends":null});
 
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=100000000&instant=false')
+      .reply(200, {"fee":0});
 
       nock('https://test.bitgo.com:443')
-        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=101000000')
+        .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=100000000&minSize=0&instant=false&targetWalletUnspents=50')
         .reply(200, {"unspents":[{"confirmations":0,"address":"2NEgkNLZcU9c9usDFTZ5c4YffCWA7gR3GMQ","tx_hash":"83b4d9cc64eb494659daa4fe244f3152d05100629793a4ff5fbb71a5bce110a4","tx_output_n":1,"value":71440985758,"script":"a914eb2e66914b73199857f669ba96d2f105d59f4b2387","redeemScript":"5221030f9653fee93fc9cd9f01d0e5af17d0c5dcc02babae2abc605eb64fc69ecdb2482102a2cf52c0addb5ae6587ddf275c6b32dac6265f66616a0fb00ff23ea4b11b681a21032b6f31e70d87fdba586e149bc6d78dde8814e529259a4a85314335d54c8dd5e453ae","chainPath":"/1/84"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
-        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-        .reply(200, {"address":"2N4Jxq3Z4GJoPucrgghFm75R8bLv8q1GTD3","chain":1,"index":86,"path":"/1/86","redeemScript":"5221025f9015b8ab25457a36cda1cfeef40af9210ebfc0ac9ee014e38a72100df1f4dc210367718564ea653156e5711ccb6d438d4e571dc35fb25990cb88bc894af96682122102c796b0baf1b5d11c3a2cbeed01158dd3aec81ea33c213555c94c24ce39fcf14453ae"});
+        .persist()
+        .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11, "validate":true})
+        .reply(200, {"address":"2N7HvAqB69B852BqEhhTNRWZQYoiRbE3hZD","chain":11,"index":86,"path":"/11/86","redeemScript":"5221025f9015b8ab25457a36cda1cfeef40af9210ebfc0ac9ee014e38a72100df1f4dc210367718564ea653156e5711ccb6d438d4e571dc35fb25990cb88bc894af96682122102c796b0baf1b5d11c3a2cbeed01158dd3aec81ea33c213555c94c24ce39fcf14453ae"});
 
       nock('https://test.bitgo.com:443')
         .post('/api/v1/tx/send')
@@ -1286,6 +1503,10 @@ describe('BitGoD', function() {
 
     before(function() {
       nock.cleanAll();
+      nock('https://test.bitgo.com:443')
+        .persist()
+        .get('/api/v1/tx/fee?version=12&numBlocks=4&maxFee=1000000')
+        .reply(200, {"feePerKb":10000,"cpfpFeePerKb":10000,"numBlocks":3,"confidence":95,"multiplier":1,"feeByBlockTarget":{"1":102926,"2":100000,"3":10000,"4":10000,"5":10000,"6":10000,"7":10000,"8":1000,"9":1000,"10":1000}});
     });
 
     it('walletlock', function() {
@@ -1297,24 +1518,30 @@ describe('BitGoD', function() {
 
     it('cannot send after walletlock', function() {
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/tx/fee?numBlocks=4')
-      .reply(200, {"feePerKb": 20000, "numBlocks": 2});
+      .persist()
+      .get('/api/v1/tx/fee?version=12&numBlocks=4&maxFee=100000')
+      .reply(200, {"feePerKb":62868,"numBlocks":2,"confidence":85,"multiplier":1});
+
+      nock('https://test.bitgo.com:443')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/billing/fee?amount=314000000&instant=false')
+      .reply(200, {"fee":0});
 
       nock('https://test.bitgo.com:443')
         .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX')
         .reply(200, {"id":"2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX","label":"Test Wallet 1","isActive":true,"type":"safehd","freeze":{"time":"2015-01-19T19:42:04.212Z","expires":"2015-01-19T19:42:14.212Z"},"adminCount":1,"private":{"keychains":[{"xpub":"xpub661MyMwAqRbcEfREDmUVK3o5wekgo2kMd8P7tZK8zrDgB454cuVJsUN5XzzwmdFRwjooWmmj6oovEZLoa66iHMBqv9JurunU6qKuCvcpMDh","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcFSu5cKZMN8LdcTZ14ADiopVd6SpgCLhpENP2VXLZLcarfN1qwJYx8yuyp6QkmFWaYLk4LLDR5DMTWEMKb69UzhKXcxPP2XG","path":"/0/0"},{"xpub":"xpub661MyMwAqRbcGeVsWGCm1sagwUJS7AKJjW1GztdKx4wp1UP9xpNs5PKPqVF6xaX9jQX3Z2i6dT5oJycFEdthymPViwRAmrFggvASmbjWaeu","path":"/0/0"}]},"permissions":"admin,spend,view","admin":{},"spendingAccount":true,"confirmedBalance":81650985758,"balance":81350975758,"pendingApprovals":[],"unconfirmedReceives":null,"unconfirmedSends":null});
 
       nock('https://test.bitgo.com:443')
-      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=315000000')
+      .get('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/unspents?target=314000000&minSize=0&instant=false&targetWalletUnspents=50')
       .reply(200, {"unspents":[{"confirmations":1,"address":"2Mven9jcBoUHa1VQRZ9Jy8nffSqw8wKZQME","tx_hash":"65ab38cd15e980ac2e4337f08b84fb53fcd71e1f5d1bb114554ef43ee67617a6","tx_output_n":1,"value":9888990000,"script":"a914255ccaf2136ed07f8bf6377710c45bfc1e83ecdb87","redeemScript":"5221023386c28561433f727a66ecd952021717a657aa2676c3e9d0960b2cdebe9020822103aa1b8b73bcd211b8d007495da84deed00e41e27445af4beb5e0187a5b4665f71210251e6b6148fba4449d2c5825b338349afed6c7e05054caafc799888de879412ea53ae","chainPath":"/1/79"}],"pendingTransactions":false});
 
       nock('https://test.bitgo.com:443')
-      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/1', {"chain":1, "validate":true})
-      .reply(200, {"address":"2N4Jxq3Z4GJoPucrgghFm75R8bLv8q1GTD3","chain":1,"index":86,"path":"/1/86","redeemScript":"5221025f9015b8ab25457a36cda1cfeef40af9210ebfc0ac9ee014e38a72100df1f4dc210367718564ea653156e5711ccb6d438d4e571dc35fb25990cb88bc894af96682122102c796b0baf1b5d11c3a2cbeed01158dd3aec81ea33c213555c94c24ce39fcf14453ae"});
+      .persist()
+      .post('/api/v1/wallet/2N9VaC4SDRNNnEy6G8zLF8gnHgkY6LV9PsX/address/11', {"chain":11, "validate":true})
+      .reply(200, {"address":"2N7HvAqB69B852BqEhhTNRWZQYoiRbE3hZD","chain":11,"index":86,"path":"/11/86","redeemScript":"5221025f9015b8ab25457a36cda1cfeef40af9210ebfc0ac9ee014e38a72100df1f4dc210367718564ea653156e5711ccb6d438d4e571dc35fb25990cb88bc894af96682122102c796b0baf1b5d11c3a2cbeed01158dd3aec81ea33c213555c94c24ce39fcf14453ae"});
 
       return callRPC('sendtoaddress', '2N3So1bs9fuLeA3MrsBGPmkaYMXGWQn1HWG', 3.14, 'have some pi')
       .then(expectError, function(err) {
-        err.code.should.equal(-13);
+        err.code.should.equal(-10600);
         err.message.should.match(/Please use walletpassphrase or setkeychain first/);
       });
     });
@@ -1365,21 +1592,14 @@ describe('BitGoD', function() {
     it('help', function() {
       return callRPC('help')
       .then(function(result) {
-        _.forEach(bitgod.traditionalBitcoindMethods, function(value, key) {
-          _.contains(result['Traditional bitcoind calls'], key).should.eql(true);
-        });
+        result.should.startWith('== BitGoD ==');
+      });
+    });
 
-        _.forEach(bitgod.traditionalBitcoindMethods, function(value, key) {
-          _.contains(result['Calls specific to BitGo'], key).should.eql(false);
-        });
-
-        _.forEach(bitgod.bitgoSpecificMethods, function(value, key) {
-          _.contains(result['Calls specific to BitGo'], key).should.eql(true);
-        });
-
-        _.forEach(bitgod.bitgoSpecificMethods, function(value, key) {
-          _.contains(result['Traditional bitcoind calls'], key).should.eql(false);
-        });
+    it('help for settoken', function() {
+      return callRPC('help', 'settoken')
+      .then(function(result) {
+        result.should.startWith('settoken "token"');
       });
     });
   });
