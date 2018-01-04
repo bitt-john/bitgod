@@ -655,7 +655,6 @@ BitGoD.prototype.handleGetNewAddress = function() {
   return this.newAddress(defaultChain);
 };
 
-
 BitGoD.prototype.handleGetAddressesByAccount = function(account) {
   this.ensureWallet();
   this.ensureBlankAccount(account);
@@ -1183,6 +1182,7 @@ BitGoD.prototype.handleGetReceivedByAddress = function(address, minConfirms) {
   });
 };
 
+BitGoD.prototype.handleGetTransaction = function(txid, decryptTravelInfo) {
 /**
  * Returns all addresses that have received from a transaction, to get a list of addresses on the system, execute listreceivedbyaddress 0 true
  * @param {int} minConfirms The minimum confirms needed to add amount
@@ -1444,7 +1444,7 @@ BitGoD.prototype.handleSendToAddress = function(address, btcAmount, comment, com
 /**
  * Send many (with extended result)
  */
-BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize) {
+BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize, enforceMinConfirmsForChange) {
   if (typeof(recipients) === 'string') {
     recipients = JSON.parse(recipients);
   }
@@ -1454,8 +1454,18 @@ BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfi
   minConfirms = this.getNumber(minConfirms, 1);
   minUnspentSize = this.getNumber(minUnspentSize);
 
-  if (instant && typeof(instant) !== 'boolean') {
-    throw self.error('Instant flag was not a boolean', -1);
+  if (_.isString(enforceMinConfirmsForChange)) {
+    enforceMinConfirmsForChange = enforceMinConfirmsForChange === 'true' ? true : false;
+  }
+  if (!_.isUndefined(enforceMinConfirmsForChange) && !_.isBoolean(enforceMinConfirmsForChange)) {
+    throw self.error('enforceMinConfirmsForChange flag was not a boolean, please pass true or false', -1);
+  }
+
+  if (_.isString(instant)) {
+    instant = instant === 'true' ? true : false;
+  }
+  if (!_.isUndefined(instant) && !_.isBoolean(instant)) {
+    throw self.error('instant flag was not a boolean, please pass true or false', -1);
   }
 
   if (recipients instanceof Array) {
@@ -1475,6 +1485,7 @@ BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfi
   .then(function(wallet) {
     return self.wallet.sendMany({
       minConfirms: minConfirms,
+      enforceMinConfirmsForChange: !!enforceMinConfirmsForChange,
       recipients: recipients,
       feeRate: self.txFeeRate,
       feeTxConfirmTarget: self.txConfirmTarget,
@@ -1496,9 +1507,9 @@ BitGoD.prototype.handleSendManyExtended = function(account, recipients, minConfi
   });
 };
 
-BitGoD.prototype.handleSendMany = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize) {
+BitGoD.prototype.handleSendMany = function(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize, enforceMinConfirmsForChange) {
   // Call sendManyExtended internally, but return just the txid, to conform to sendmany specification
-  return this.handleSendManyExtended(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize)
+  return this.handleSendManyExtended(account, recipients, minConfirms, comment, instant, sequenceId, minUnspentSize, enforceMinConfirmsForChange)
   .then(function(result) {
     return result.hash;
   });
@@ -1622,8 +1633,9 @@ BitGoD.prototype.expose = function(name, method, noLogArgs) {
   var self = this;
   this.server.expose(name, function(args, opt, callback) {
     var argString = noLogArgs ? '' : (' ' + JSON.stringify(args));
+    self.log('RPC call: ',name, argString);
     if(name !== 'listreceivedbyaddress')
-      self.log('RPC call: ' + name + argString);
+      self.log('RPC call: ' + name ,argString);
     return Q().then(function() {
       return method.apply(self, args);
     })
