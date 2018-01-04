@@ -1183,72 +1183,6 @@ BitGoD.prototype.handleGetReceivedByAddress = function(address, minConfirms) {
 };
 
 BitGoD.prototype.handleGetTransaction = function(txid, decryptTravelInfo) {
-/**
- * Returns all addresses that have received from a transaction, to get a list of addresses on the system, execute listreceivedbyaddress 0 true
- * @param {int} minConfirms The minimum confirms needed to add amount
- * @param {boolean} includeEmpty Whether to show empty balance addresses
- * @returns an array of objects containing:
-   "address" : receiving address
-   "account" : the account of the receiving address
-   "amount" : total amount received by the address
-   "confirmations" : number of confirmations of the most recent transaction included
- */
-
-BitGoD.prototype.handleListReceivedByAddress = function(minConfirms, includeEmpty) {
-
-  var self = this;
-
-  // the minimum confirms before amount added to total
-  minConfirms = this.getNumber(minConfirms, 0);
-
-  //whether to show 0 balance addresses
-  includeEmpty = includeEmpty || false;
-
-  if (includeEmpty && typeof(includeEmpty) !== 'boolean') {
-    throw self.error('Instant flag was not a boolean', -1);
-  }
-  function get() {
-    return new Promise(function (resolve, reject) {
-
-      var options = {
-        port: 8080,
-        hostname: 'bitgo.bitt.com',
-        method: 'POST',
-        path: '/listreceivedbyaddress'
-      };
-
-      var req = https.request(options, function(res) {
-        var list = '';
-        res.on('data', function(chunk) {
-          list += chunk;
-        });
-        res.on('end', function() {
-          resolve(JSON.parse(list))
-        })
-
-      });
-
-      req.on('error', function (e) {
-        reject(e);
-        console.log (`problem with request:`, e);
-      });
-
-      var postData = JSON.stringify({
-        'minConfirms' : minConfirms
-      });
-      req.write(postData);
-      req.end();
-
-
-    });
-  }
-  return get();
-
-
-};
-
-
-BitGoD.prototype.handleGetTransaction = function(txid, decryptTravelInfo) {
   this.ensureWallet();
   var self = this;
 
@@ -1633,9 +1567,8 @@ BitGoD.prototype.expose = function(name, method, noLogArgs) {
   var self = this;
   this.server.expose(name, function(args, opt, callback) {
     var argString = noLogArgs ? '' : (' ' + JSON.stringify(args));
-    self.log('RPC call: ',name, argString);
     if(name !== 'listreceivedbyaddress')
-      self.log('RPC call: ' + name ,argString);
+      self.log('RPC call: '+ name ,argString);
     return Q().then(function() {
       return method.apply(self, args);
     })
